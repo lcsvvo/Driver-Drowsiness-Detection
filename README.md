@@ -73,22 +73,28 @@
 
 ## 6. 저장소 구조
 
-현재는 초기 세팅 상태로, 아래 3개 파일만 존재한다.
-
 ```
 driver-drowsiness-detection/
 ├── README.md      # 이 문서
 ├── .gitignore     # 데이터·모델·개인 영상 제외 규칙
-└── config.py      # 공통 경로 정의 (팀원 PC 간 경로 통일)
+├── config.py      # 공통 경로 정의 (팀원 PC 간 경로 통일)
+└── model/
+    ├── 01_TRAIN.ipynb        # Eye / Yawn CNN 학습
+    ├── 02_INFER_YuNet.ipynb  # YuNet + 두 CNN 추론, 실시간 데모
+    └── detectors/
+        └── face_detection_yunet_2023mar.onnx   # YuNet 얼굴 탐지기
 ```
 
-**폴더 구조는 미리 만들지 않는다.** 코드가 실제로 필요로 하는 시점에 추가하고, 추가할 때 이 섹션을 갱신한다. 다음 두 폴더는 `config.py`가 실행 시 자동으로 생성하며 git 추적 대상이 아니다.
+**폴더 구조는 미리 만들지 않는다.** 코드가 실제로 필요로 하는 시점에 추가하고, 추가할 때 이 섹션을 갱신한다. 아래 폴더는 git 추적 대상이 아니며, 앞의 셋은 `config.py`가 import 시점에 자동 생성한다.
 
 | 폴더 | 용도 | git |
 |---|---|---|
 | `data/` | 데이터셋, 직접 촬영한 테스트 영상 | 제외 |
 | `outputs/` | 실행 결과, 로그, 캡처, 데모 영상 | 제외 |
+| `model/artifacts/` | 학습된 CNN 가중치(`.keras`), history | 제외 — §8 참고 |
 | `private/` | 회의록, 팀원 연락처·일정 등 비공개 자료 | 제외 |
+
+> `model/detectors/`는 예외적으로 **git 추적 대상**이다. 이유는 §8을 보라.
 
 > `outputs/`는 통째로 제외되므로 **발표 자료나 README에 넣을 스크린샷을 여기 두면 커밋되지 않는다.** 공유해야 하는 이미지는 `outputs/` 밖에 둔다.
 > `private/`는 아직 만들지 않았다. 필요해지면 만드는 즉시 `.gitignore` 규칙이 적용된다.
@@ -120,6 +126,26 @@ PROJECT_ROOT : driver-drowsiness-detection
 `RuntimeWarning`이 뜨면 `config.py`가 저장소 최상단에 있는지 확인한다.
 코드 안에서는 `import config` 후 `config.describe()`로 같은 점검을 할 수 있다.
 
+### 노트북 실행 (`model/`)
+
+```bash
+pip install opencv-python tensorflow numpy matplotlib
+
+# CNN 가중치를 Release 에서 받아 model/artifacts/ 에 넣는다 (§8)
+# 그 뒤 VS Code 나 Jupyter 에서 실행
+```
+
+| 노트북 | 하는 일 | 필요한 것 |
+|---|---|---|
+| `01_TRAIN.ipynb` | Eye / Yawn CNN 학습 → `model/artifacts/*.keras` 생성 | 데이터셋 (없으면 `kagglehub`로 자동 다운로드) |
+| `02_INFER_YuNet.ipynb` | YuNet으로 얼굴·눈·입을 잡아 두 CNN으로 판정. 웹캠 실시간 데모 포함 | `.keras` 2개 + 웹캠 |
+
+**가중치가 이미 있으면 `01`을 돌릴 필요가 없다.** `02`만 실행하면 된다.
+`01`은 `FORCE_RETRAIN = False`라서 `.keras`가 있으면 재학습하지 않고 불러온다.
+
+두 노트북 모두 두 번째 코드 셀에서 `config.py`를 찾아 import한 뒤 경로를 가져온다.
+저장소 안이면 어느 폴더에서 열든 동작하고, 저장소 밖이면 즉시 `FileNotFoundError`로 멈춘다.
+
 ## 8. 데이터 및 모델 관리 방식
 
 ### 원칙
@@ -149,7 +175,27 @@ PROJECT_ROOT : driver-drowsiness-detection
 
 ### 모델 가중치
 
-MediaPipe Face Mesh는 패키지에 포함된 모델을 사용하므로 현재 별도 가중치 파일 관리가 필요하지 않다. 향후 별도 모델 파일이 필요해지면 `.gitignore`에 이미 규칙이 있으므로 그대로 제외된다.
+가중치는 **용량에 따라 두 갈래로 나눠 관리한다.**
+
+| 파일 | 용량 | 위치 | git |
+|---|---|---|---|
+| `face_detection_yunet_2023mar.onnx` | 0.2MB | `model/detectors/` | **포함** |
+| `eye_model.keras` | 42MB | `model/artifacts/` | 제외 → Release |
+| `yawn_model.keras` | 42MB | `model/artifacts/` | 제외 → Release |
+
+**YuNet만 예외적으로 커밋한다.** 위 원칙 세 가지 중 어느 것도 걸리지 않기 때문이다. 0.2MB로 용량 문제가 없고, OpenCV Zoo가 Apache-2.0으로 공개 배포하므로 재배포 제한이 없으며, 얼굴 영상이 아니라 사전학습 가중치라 초상권과 무관하다. 그리고 이 파일이 없으면 `02_INFER_YuNet.ipynb`가 **첫 셀에서 멈춘다** — 얼굴 탐지가 전체 파이프라인의 진입점이라 없으면 CNN 두 개를 로드할 기회조차 없다. 팀원마다 따로 받게 하면 매번 막히므로 저장소에 함께 둔다.
+
+**CNN 가중치 2개는 Release로 배포한다.** 파일당 42MB로 GitHub 파일당 100MB 제한에는 걸리지 않지만, 한 번 커밋되면 히스토리에 영구히 남고 재학습할 때마다 84MB씩 누적된다. Release 자산은 히스토리에 들어가지 않고 필요 없어지면 지울 수 있다.
+
+받는 방법:
+
+```bash
+# 저장소 Releases 페이지에서 두 파일을 받아 model/artifacts/ 에 넣는다
+# 또는 gh CLI 로:
+gh release download weights-v1 -D model/artifacts/
+```
+
+`model/artifacts/` 폴더는 `config.py`가 자동으로 만들어 두므로 파일만 넣으면 된다. 제대로 들어갔는지는 `python config.py`로 확인한다.
 
 ## 9. 현재 진행 상황
 
@@ -157,6 +203,7 @@ MediaPipe Face Mesh는 패키지에 포함된 모델을 사용하므로 현재 �
 |---|---|
 | 저장소 초기 세팅 (README / .gitignore / config.py) | 완료 |
 | EAR 기반 졸음 감지 baseline 로컬 확보 | 완료 (**아직 미커밋**) |
+| YuNet + Eye/Yawn CNN 학습·추론 노트북 | 완료 (이 브랜치) |
 | MAR 하품 감지 | 미착수 |
 | head pose 주의 산만 감지 | 미착수 |
 | PERCLOS | 미착수 |
