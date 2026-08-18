@@ -1,157 +1,187 @@
-# Driver Drowsiness Detection
+# Driver Drowsiness & Distraction Detection
 
-주행 영상·웹캠에서 운전자의 **졸음**을 감지하는 시스템. 4인 팀 프로젝트, 학부 수준.
+웹캠 영상에서 운전자의 **졸음**과 **주의 산만**을 실시간으로 감지하고 경고하는 시스템. 4인 팀 프로젝트.
 
-`Python 3.10+` · YuNet 얼굴 검출 + CNN 눈/하품 분류 + PERCLOS 시간 누적
+`Status: Initial Setup` `Python 3.9+` `License: TBD`
 
-> 이 README 는 **실제 구현된 코드 기준**으로 작성한다. 계획만 있고 미구현인 항목은 "예정"으로 표기한다.
+> 이 문서는 저장소 초기 세팅 시점에 작성되었다. **확정된 내용과 미확정 내용을 §3·§9에서 구분해 표기**하며, 미확정 항목은 결정되는 대로 이 README를 갱신한다.
 
 ## 1. 프로젝트 소개
 
-- **무엇**: 카메라 영상에서 얼굴을 검출하고, 눈 감김·하품 상태를 CNN으로 분류한 뒤, 시간 창에서 PERCLOS·최장 감김·하품 빈도 등을 이용해 졸음 위험을 판정하는 시스템을 구현한다.
-- **왜**: 졸음운전은 사고의 큰 원인이다. 별도 센서 없이 카메라만으로 동작하는 저비용 감지의 실현 가능성을 직접 구현해 확인한다.
-- **범위**: 눈 상태 분류기(눈 트랙)와 하품 분류기(하품 트랙)를 학습·검증하고, 두 지표를 시간 누적해 위험도로 통합한다.
+- **What**: 웹캠으로 운전자 얼굴을 촬영해 얼굴 랜드마크를 추출하고, 눈·입·머리 방향 상태로부터 졸음 및 주의 산만 여부를 판정해 경고를 발생시킨다.
+- **Why**: 졸음운전과 주행 중 주의 분산은 사고 원인 중 큰 비중을 차지한다. 별도 센서 없이 카메라만으로 동작하는 저비용 감지 방식의 실현 가능성을 직접 구현해 확인한다.
+- **범위**: 학부 수준의 단기 팀 프로젝트. 새로운 모델을 학습시키는 것이 아니라, **기하학적 랜드마크 지표 기반의 실시간 판정 파이프라인을 구현하고 동작을 검증하는 것**이 목표다.
 
 ## 2. 문제 정의
 
-단일 프레임의 눈 감김만으로는 졸음을 판정할 수 없다. 깜빡임과 졸음, 하품과 대화는 **정지 영상이 아니라 시간 축에서만 구분된다.** 그래서 프레임 단위 판정을 그대로 쓰지 않고, 시간 창 위에서 누적·평활한 값(PERCLOS 등)으로 상태를 판정한다.
-
-또한 **눈 감김이라는 단일 신호만으로는 졸음과 하품을 명확하게 구분하기 어려운 결과가 관찰됐다**(눈 트랙 STEP14·15). 하품 상황에서도 Closed 판정이 상당 비율 나타났기 때문이다. 따라서 후속 위험도 지수에서는 눈 지표와 하품 등 다른 행동 정보를 함께 고려하는 방안을 검토한다.
+단일 프레임의 눈 감김만으로는 졸음을 판정할 수 없다. 눈 깜빡임과 졸음, 하품과 대화, 사이드미러 확인과 주의 산만은 **정지 영상이 아니라 시간 축에서만 구분된다.** 따라서 프레임 단위 지표를 그대로 쓰지 않고, 일정 시간 창(window) 위에서 누적·평활한 값으로 상태를 판정하는 구조가 필요하다.
 
 ## 3. 목표
 
+### 확정된 목표
+
 | # | 목표 | 상태 |
 |---|---|---|
-| G1 | YuNet 얼굴 검출 + 눈/하품 crop 추출 | 완료 (`model/02_INFER_YuNet.ipynb`) |
-| G2 | 눈 감김 CNN 분류 + MRL·DMD 로 학습·검증 | **완료 (눈 트랙 10–15)** |
-| G3 | 하품 CNN 분류 | 예정 (하품 트랙 20·21, 팀원) |
-| G4 | PERCLOS·최장 감김·하품 빈도 누적 | 부분 (02 에 PERCLOS 실시간, 통합은 예정) |
-| G5 | 위험도 지수 통합 + 경고 | 예정 (STEP30) |
+| G1 | 웹캠 실시간 얼굴 랜드마크 추출 파이프라인 동작 | 확정 |
+| G2 | 눈 감김 기반 졸음 감지 (EAR) | 확정 (baseline 확보) |
+| G3 | 하품 감지 지표 추가 (MAR) | 확정 (미구현) |
+| G4 | 머리 방향 기반 주의 산만 감지 (head pose) | 확정 (미구현) |
+| G5 | `정상 / 졸음 / 주의산만` 3-state 판정 및 경고 출력 | 확정 (미구현) |
 
-> 초기 계획의 EAR/MAR(기하 랜드마크)·머리 방향 주의산만은 현재 코드에 없다. 눈·하품은 **CNN 분류**로 방향을 바꿨고, 주의산만은 범위에서 제외됐다. 이 표는 실제 코드 기준이다.
+### 스트레치 목표 (여력이 있을 때만)
+
+- 안전벨트 착용 여부 감지
+- 휴대전화 사용 감지
+
+> 스트레치 목표는 **핵심 목표 G1–G5가 모두 동작한 이후**에만 착수한다. 현재 계획에 포함되지 않는다.
 
 ## 4. 접근 방법
 
 | 구성 요소 | 방식 | 상태 |
 |---|---|---|
-| 얼굴 검출 | YuNet (`FaceDetectorYN`, OpenCV) | 완료 |
-| 눈 상태 분류 | CNN (Closed / Open), 128×128 grayscale | 완료 |
-| 하품 분류 | CNN (yawn / no_yawn) | baseline(01) + 예정(21) |
-| 졸음 누적 지표 | PERCLOS, 최장 연속 감김 | 02 에 실시간 구현 |
-| 위험도 통합 | 눈 + 하품 지표 결합 | 예정 |
-| 눈 CNN 학습 데이터 | MRL Eye(주) + DMD(도메인 보강) | 완료 |
-| 눈 CNN 검증 | DMD hold-out + NITYMED microsleep | 완료 |
+| 얼굴 랜드마크 | MediaPipe Face Mesh | 확정 |
+| 졸음 지표 | EAR (Eye Aspect Ratio) | 구현됨 (baseline) |
+| 졸음 누적 지표 | PERCLOS | 미구현 |
+| 하품 지표 | MAR (Mouth Aspect Ratio) | 미구현 |
+| 주의 산만 지표 | 머리 회전각 (OpenCV `solvePnP`) | 미구현 |
+| 상태 판정 | 규칙 기반 3-state 분류 | 미설계 |
+| 임계값 | — | **TBD** (실측 후 결정) |
+| 평가 방법 | — | **TBD** |
 
-### 눈 트랙 핵심 결과 (STEP10–15)
+**임계값과 평가 방법은 의도적으로 비워둔다.** 임계값은 카메라·조명·개인차에 의존하므로 실제 촬영 데이터로 측정한 뒤 정한다. 지금 숫자를 적으면 근거 없는 값이 코드에 고정된다.
 
-- **눈 CNN은 DMD hold-out에서 Closed-Recall 0.914**를 기록했으며, 실제 영상 파이프라인에서도 Closed-Recall **0.916**을 기록했다.
-- **MRL+DMD 합본 학습(C)**은 네 학습 조건 중 가장 높은 Closed-Recall과 F1을 기록했다. MRL only 조건은 DMD 환경에서 Precision이 낮았고, DMD 학습 데이터를 포함한 조건에서 개선이 관찰됐다.
-- **NITYMED에서는 영상 길이와 창 개수의 영향이 확인됐다.** 창 개수만으로 AUC가 **0.945**였으며, 창 개수의 영향을 고려한 후 세 눈 지표의 AUC는 **0.402~0.424**로 낮아졌다.
-- **하품 구간의 Closed 판정 비율은 25.7%**였으며, microsleep 영상에서 샘플링한 프레임은 19.9%였다. 영상 단위 Closed 비율 AUC는 **0.440 [0.304, 0.577]**로, 이 표본에서는 눈 감김 단독의 명확한 판별력을 확인하지 못했다.
-- 따라서 **눈 CNN의 눈 상태 분류 성능과 졸음·하품을 구분하는 성능은 별개의 문제**이며, 후속 위험도 지수에서는 눈 감김 외의 행동 정보를 함께 고려할 필요가 있다.
+### 이론적 참고 문헌
+
+코드 출처가 아니라 **지표 정의의 근거**로 인용한다.
+
+- Soukupová & Čech (2016), *Real-Time Eye Blink Detection using Facial Landmarks*, CVWW — EAR 정의
+- Albadawi et al. (2023), *Real-Time Machine Learning-Based Driver Drowsiness Detection Using Visual Features*, J. Imaging
 
 ## 5. 기술 스택
 
 | 구분 | 도구 |
 |---|---|
-| 언어 | Python 3.10+ |
-| 얼굴 검출 | OpenCV `FaceDetectorYN` (YuNet) |
-| 분류 모델 | TensorFlow / Keras CNN |
-| 수치·평가 | NumPy, pandas, scikit-learn |
-| 시각화 | matplotlib |
-| 개발 환경 | VS Code (로컬), 필요시 Colab(GPU 학습) |
+| 언어 | Python 3.9+ |
+| 랜드마크 추출 | MediaPipe (Face Mesh) |
+| 영상 처리 / 기하 연산 | OpenCV (`cv2`, `solvePnP`) |
+| 수치 연산 | NumPy |
+| 개발 환경 | VS Code (로컬) |
+| 협업 | Git / GitHub |
 
-의존성은 `requirements.txt` 참고. `pip install -r requirements.txt`.
+> 로컬 실행이 전제다. **웹캠 접근이 필요하므로 Google Colab은 사용하지 않는다.**
+> 의존성 버전이 확정되면 `requirements.txt`를 추가한다. (현재 미작성)
 
 ## 6. 저장소 구조
 
+현재는 초기 세팅 상태로, 아래 3개 파일만 존재한다.
+
 ```
-Driver-Drowsiness-Detection/
-├── README.md
-├── requirements.txt
-├── config.py               # 공통 경로 (팀원 PC 간 통일). 절대경로 금지
-├── model/
-│   ├── 01_TRAIN.ipynb          # Eye/Yawn CNN 학습 (수정 금지)
-│   ├── 02_INFER_YuNet.ipynb    # YuNet + 추론 + 실시간 PERCLOS (수정 금지)
-│   ├── artifacts/              # 학습된 .keras (git 제외, Release 배포)
-│   └── detectors/
-│       └── face_detection_yunet_2023mar.onnx   # YuNet (git 추적)
-├── notebooks/              # 눈 트랙 (이 저장소의 핵심 작업)
-│   ├── 00_overview.ipynb       # 전체 지도 — 여기서 시작
-│   ├── 10_eye_gt_dmd.ipynb
-│   ├── 11_eye_dataset_build.ipynb
-│   ├── 12_eye_train_eval.ipynb
-│   ├── 13_eye_frame_eval_dmd.ipynb
-│   ├── 14_eye_nitymed_video_eval.ipynb
-│   └── 15_eye_yawn_falsepositive.ipynb
-│   └── 19_eye_train_colab.ipynb  # 학습 보조 노트북
-├── src/                    # 눈 트랙 파이썬 모듈
-│   ├── dmd_annotation.py  dmd_crop.py  build_dmd_eye_dataset.py
-│   ├── mrl_split.py  mrl_dataset.py  eye_preprocess.py
-│   └── train_eye.py
-├── data/                   # 데이터셋 (git 제외)
-│   ├── raw/{DMD, MRL Eye, NITYMED, Yawn-Eye-Dataset New}
-│   └── proceed/NITYMED     # NITYMED 전처리 얼굴 crop
-└── outputs/                # 실행 결과 (git 제외)
+driver-drowsiness-detection/
+├── README.md      # 이 문서
+├── .gitignore     # 데이터·모델·개인 영상 제외 규칙
+└── config.py      # 공통 경로 정의 (팀원 PC 간 경로 통일)
 ```
 
-git 제외: `data/`, `outputs/`, `model/artifacts/`, `private/`. `model/detectors/` 는 예외적으로 추적(§8).
+**폴더 구조는 미리 만들지 않는다.** 코드가 실제로 필요로 하는 시점에 추가하고, 추가할 때 이 섹션을 갱신한다. 다음 두 폴더는 `config.py`가 실행 시 자동으로 생성하며 git 추적 대상이 아니다.
+
+| 폴더 | 용도 | git |
+|---|---|---|
+| `data/` | 데이터셋, 직접 촬영한 테스트 영상 | 제외 |
+| `outputs/` | 실행 결과, 로그, 캡처, 데모 영상 | 제외 |
+| `private/` | 회의록, 팀원 연락처·일정 등 비공개 자료 | 제외 |
+
+> `outputs/`는 통째로 제외되므로 **발표 자료나 README에 넣을 스크린샷을 여기 두면 커밋되지 않는다.** 공유해야 하는 이미지는 `outputs/` 밖에 둔다.
+> `private/`는 아직 만들지 않았다. 필요해지면 만드는 즉시 `.gitignore` 규칙이 적용된다.
 
 ## 7. 실행 방법
 
+**아직 실행 가능한 진입점 스크립트가 저장소에 커밋되어 있지 않다.** 현재 단계에서는 환경 준비까지만 가능하다.
+
 ```bash
-git clone <repo-url> && cd Driver-Drowsiness-Detection
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python config.py                                     # 경로 확인 · data/·outputs/ 생성
+git clone <repo-url>
+cd driver-drowsiness-detection
+
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+
+pip install opencv-python mediapipe numpy
+
+python config.py               # 경로 설정 확인 및 data/, outputs/ 생성
 ```
 
-### 눈 트랙 실행 순서
-
-`notebooks/00_overview.ipynb` 를 먼저 열어 전체 지도와 산출물 점검을 본다. 그다음:
+`python config.py`가 아래처럼 출력되면 경로가 정상이다. (개인 PC 절대경로는 출력하지 않는다.)
 
 ```
-[사전] model/01_TRAIN 실행 → model/artifacts/eye_model.keras
-       python src/mrl_split.py --mrl_root "data/raw/MRL Eye/data" --out_dir outputs/mrl_split
-
-10 → 11 → 12 → (13 · 14 · 15)
+PROJECT_ROOT : driver-drowsiness-detection
+  [OK     ] DATA_DIR    : data
+  [OK     ] OUTPUTS_DIR : outputs
 ```
 
-13·14·15 는 서로 독립이며 모두 12 의 C 모델(`eye_mrl+dmd__eval-dmd__gray128.keras`)을 공유한다. 각 노트북은 첫 셀에서 `config.py` 를 찾아 경로를 가져오므로 저장소 안 어디서 열어도 동작한다.
+`RuntimeWarning`이 뜨면 `config.py`가 저장소 최상단에 있는지 확인한다.
+코드 안에서는 `import config` 후 `config.describe()`로 같은 점검을 할 수 있다.
 
-### 기준본 (수정 금지)
+## 8. 데이터 및 모델 관리 방식
 
-`model/01_TRAIN.ipynb`(CNN 학습), `model/02_INFER_YuNet.ipynb`(YuNet 추론·실시간 데모)는 팀 기준본이라 눈 트랙 작업에서 수정하지 않는다. 눈 트랙 모델은 규격이 달라(128×128×1 vs 256×256×3) 02 에 그대로 교체할 수 없다. 실시간 시연에 쓰려면 별도 추론 노트북이 필요하다(STEP12·13 참고).
+### 원칙
 
-## 8. 데이터·모델 관리
+**코드와 문서만 git으로 관리한다. 데이터·모델·영상은 저장소에 올리지 않는다.**
 
-- **개인 PC 절대경로를 코드에 쓰지 않는다.** 경로는 전부 `config.py` 에서 가져온다.
-- 데이터·영상·`.keras` 는 커밋하지 않는다. `model/detectors/*.onnx`(232 KB)만 예외로 추적한다 — 사전학습 검출기라 모든 팀원이 같은 파일을 써야 하기 때문.
-- 노트북은 **출력을 지우고 커밋**한다. 이미지 출력이 들어가면 diff 가 안 읽히고 용량이 커진다.
-- CNN 가중치(`eye_model.keras`, `yawn_model.keras`)는 저장소 Release 로 배포한다. 받아서 `model/artifacts/` 에 넣거나 `01_TRAIN` 으로 직접 학습한다.
+세 가지 이유가 겹친다.
 
-## 9. 진행 상황
+1. **용량** — 영상 데이터셋은 GB 단위다. GitHub는 파일당 100MB 제한이 있고, 한 번 커밋되면 히스토리에 남아 제거가 번거롭다.
+2. **라이선스** — 공개 데이터셋 중 재배포가 제한되는 것이 있다. 저장소가 Public일 경우 재배포에 해당할 수 있다.
+3. **초상권·개인정보** — 팀원이 직접 촬영한 얼굴 영상이 포함된다. 실수로 커밋하면 되돌리기 어렵다. `.gitignore`에서 폴더 단위와 확장자 단위로 이중 차단했다.
 
-| 트랙 | 상태 |
+### 공유 방법
+
+데이터는 별도 채널(팀 공용 드라이브 등)로 공유하고, 각자 로컬 `data/` 아래에 동일한 이름으로 배치한다. 폴더명이 다르면 코드가 깨지므로 **경로는 반드시 `config.py`를 통해 참조한다.**
+
+### 데이터셋 검토 현황
+
+| 데이터셋 | 용도 | 상태 |
+|---|---|---|
+| YawDD | 하품 감지 (대화·노래 상황 구분 가능) | 검토 완료, 사용 후보 |
+| UTA-RLDD | 실제 졸음 상황 | 검토 완료, 사용 후보 |
+| State Farm Distracted Driver | 주의 산만 | 스트레치 목표 전용, 재배포 제한 있음 |
+| AI-Hub 운전자 상태 영상 | 종합 | **접근 승인·라벨 단위 미확인** |
+
+> **최종 사용 데이터셋은 확정되지 않았다.** 위 표는 검토 결과이며, 확정 시 갱신한다.
+
+### 모델 가중치
+
+MediaPipe Face Mesh는 패키지에 포함된 모델을 사용하므로 현재 별도 가중치 파일 관리가 필요하지 않다. 향후 별도 모델 파일이 필요해지면 `.gitignore`에 이미 규칙이 있으므로 그대로 제외된다.
+
+## 9. 현재 진행 상황
+
+| 항목 | 상태 |
 |---|---|
-| 기준본 01·02 (YuNet + CNN + 실시간 PERCLOS) | 완료 |
-| **눈 트랙 10–15 (MRL·DMD 학습·검증)** | **완료** |
-| 하품 트랙 20·21 | 예정 (팀원) |
-| 위험도 지수 30 | 예정 |
-
-눈 트랙 상세 결과는 `notebooks/00_overview.ipynb` 참고.
+| 저장소 초기 세팅 (README / .gitignore / config.py) | 완료 |
+| EAR 기반 졸음 감지 baseline 로컬 확보 | 완료 (**아직 미커밋**) |
+| MAR 하품 감지 | 미착수 |
+| head pose 주의 산만 감지 | 미착수 |
+| PERCLOS | 미착수 |
+| 3-state 판정 로직 | 미설계 |
+| 임계값 결정 | 미착수 |
+| 평가 방법 | **미정** |
+| 데이터셋 최종 확정 | **미정** |
+| 팀원 역할 분담 | **미정** |
+| `requirements.txt` | 미작성 |
 
 ## 10. 협업 방식
 
-4인이 각자 다른 PC 에서 작업하므로 아래를 지킨다.
+4인이 각자 다른 PC에서 작업하므로 아래를 지킨다.
 
-1. 작업 전 `main` 에 `git pull`
-2. 작업 단위 브랜치 — `<type>/<설명>` (예: `feature/yawn-cnn`). 에이전트 자동 브랜치명(`claude/~` 등)은 쓰지 않는다
-3. 작업 후 `commit` → `push` → PR (무엇을/왜/확인할 점)
-4. **셀프 머지 금지.** 최소 1명 리뷰 후 머지
-5. 개인 PC 절대경로 금지, 데이터·모델 커밋 금지, 노트북 출력 지우고 커밋
+1. 작업 시작 전 반드시 로컬 `main`에 `git pull`
+2. 작업 단위로 브랜치 생성 — `<type>/<짧은-설명>` 형식
+   - 예: `feature/mar-yawn-detection`, `fix/landmark-index`, `docs/readme-update`
+   - `claude/~`, `codex/~` 등 에이전트 자동 브랜치명은 사용하지 않는다
+3. 작업 후 `commit` → `push`
+4. PR 생성 — 무엇을 / 왜 / 팀원이 확인할 점만 간단히
+5. **셀프 머지 금지.** 최소 1명 리뷰 후 머지
+6. 다른 작업이 먼저 반영됐을 수 있으므로 새 작업 전 항상 `pull`
 
-### 참고 문헌
+### 코드 작성 시 지킬 것
 
-- Soukupová & Čech (2016), *Real-Time Eye Blink Detection using Facial Landmarks*, CVWW
-- Albadawi et al. (2023), *Real-Time Machine Learning-Based Driver Drowsiness Detection Using Visual Features*, J. Imaging
+- **개인 PC 절대경로를 코드에 직접 쓰지 않는다.** 경로는 `config.py`에서 import한다.
+- 데이터 파일·영상·모델 파일을 커밋하지 않는다. `git status`로 확인 후 커밋한다.
+- 노트북을 커밋할 경우 출력(output)을 지우고 커밋한다. 이미지 출력이 그대로 들어가면 diff를 읽을 수 없고 용량이 커진다.
