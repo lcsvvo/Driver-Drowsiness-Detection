@@ -1,0 +1,91 @@
+{
+  "tag": "dmd__eval-dmd__gray128",
+  "train": [
+    "dmd"
+  ],
+  "eval_source": "dmd",
+  "size": 128,
+  "gray": true,
+  "sharpen": false,
+  "pretrained": null,
+  "threshold": 0.93,
+  "threshold_reached_target": true,
+  "threshold_grid_saturated": false,
+  "target_recall": 0.9,
+  "test_main": {
+    "threshold": 0.93,
+    "n": 3805,
+    "accuracy": 0.9514,
+    "closed_recall": 0.5967,
+    "closed_precision": 0.9552,
+    "closed_f1": 0.7346,
+    "confusion": {
+      "closed_as_closed": 256,
+      "closed_as_open": 173,
+      "open_as_closed": 12,
+      "open_as_open": 3364
+    }
+  },
+  "test_main_at_050": {
+    "threshold": 0.5,
+    "n": 3805,
+    "accuracy": 0.9635,
+    "closed_recall": 0.8205,
+    "closed_precision": 0.8502,
+    "closed_f1": 0.8351,
+    "confusion": {
+      "closed_as_closed": 352,
+      "closed_as_open": 77,
+      "open_as_closed": 62,
+      "open_as_open": 3314
+    }
+  },
+  "test_other": {
+    "threshold": 0.93,
+    "n": 12155,
+    "accuracy": 0.7908,
+    "closed_recall": 0.8709,
+    "closed_precision": 0.7538,
+    "closed_f1": 0.8081,
+    "confusion": {
+      "closed_as_closed": 5355,
+      "closed_as_open": 794,
+      "open_as_closed": 1749,
+      "open_as_open": 4257
+    }
+  },
+  "by_glasses": {
+    "glasses=0": {
+      "threshold": 0.93,
+      "n": 2894,
+      "accuracy": 0.9831,
+      "closed_recall": 0.7895,
+      "closed_precision": 0.9434,
+      "closed_f1": 0.8596,
+      "confusion": {
+        "closed_as_closed": 150,
+        "closed_as_open": 40,
+        "open_as_closed": 9,
+        "open_as_open": 2695
+      }
+    },
+    "glasses=1": {
+      "threshold": 0.93,
+      "n": 911,
+      "accuracy": 0.8507,
+      "closed_recall": 0.4435,
+      "closed_precision": 0.9725,
+      "closed_f1": 0.6092,
+      "confusion": {
+        "closed_as_closed": 106,
+        "closed_as_open": 133,
+        "open_as_closed": 3,
+        "open_as_open": 669
+      }
+    }
+  },
+  "n_train": 10956,
+  "n_val": 3338,
+  "n_test_frames": 3805,
+  "model": "model\\artifacts\\eye_dmd__eval-dmd__gray128.keras"
+}

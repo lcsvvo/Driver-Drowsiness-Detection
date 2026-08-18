@@ -1,0 +1,91 @@
+{
+  "tag": "mrl+dmd__eval-dmd__gray128__smoke",
+  "train": [
+    "mrl",
+    "dmd"
+  ],
+  "eval_source": "dmd",
+  "size": 128,
+  "gray": true,
+  "sharpen": false,
+  "pretrained": null,
+  "threshold": 0.4600000000000001,
+  "threshold_reached_target": true,
+  "target_recall": 0.9,
+  "test_main": {
+    "threshold": 0.46,
+    "n": 573,
+    "accuracy": 0.4206,
+    "closed_recall": 0.7077,
+    "closed_precision": 0.1281,
+    "closed_f1": 0.217,
+    "confusion": {
+      "closed_as_closed": 46,
+      "closed_as_open": 19,
+      "open_as_closed": 313,
+      "open_as_open": 195
+    }
+  },
+  "test_main_at_050": {
+    "threshold": 0.5,
+    "n": 573,
+    "accuracy": 0.8866,
+    "closed_recall": 0.0,
+    "closed_precision": 0.0,
+    "closed_f1": 0.0,
+    "confusion": {
+      "closed_as_closed": 0,
+      "closed_as_open": 65,
+      "open_as_closed": 0,
+      "open_as_open": 508
+    }
+  },
+  "test_other": {
+    "threshold": 0.46,
+    "n": 600,
+    "accuracy": 0.4317,
+    "closed_recall": 0.6678,
+    "closed_precision": 0.4582,
+    "closed_f1": 0.5435,
+    "confusion": {
+      "closed_as_closed": 203,
+      "closed_as_open": 101,
+      "open_as_closed": 240,
+      "open_as_open": 56
+    }
+  },
+  "by_glasses": {
+    "glasses=0": {
+      "threshold": 0.46,
+      "n": 431,
+      "accuracy": 0.4037,
+      "closed_recall": 0.7826,
+      "closed_precision": 0.0667,
+      "closed_f1": 0.1229,
+      "confusion": {
+        "closed_as_closed": 18,
+        "closed_as_open": 5,
+        "open_as_closed": 252,
+        "open_as_open": 156
+      }
+    },
+    "glasses=1": {
+      "threshold": 0.46,
+      "n": 142,
+      "accuracy": 0.4718,
+      "closed_recall": 0.6667,
+      "closed_precision": 0.3146,
+      "closed_f1": 0.4275,
+      "confusion": {
+        "closed_as_closed": 28,
+        "closed_as_open": 14,
+        "open_as_closed": 61,
+        "open_as_open": 39
+      }
+    }
+  },
+  "n_train": 600,
+  "n_val": 600,
+  "n_test_frames": 573,
+  "model": "model\\artifacts\\eye_mrl+dmd__eval-dmd__gray128__smoke.keras"
+}
