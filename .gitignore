@@ -72,11 +72,25 @@ models/
 *.pth
 *.onnx
 *.h5
+*.keras
 *.tflite
 *.task
 *.dat
 *.caffemodel
 *.weights
+
+# 학습 산출물: eye/yawn CNN 가중치는 파일당 약 45MB다.
+# GitHub 파일당 100MB 제한에는 안 걸리지만 한번 커밋되면 히스토리에 영구히 남고
+# 재학습할 때마다 누적된다. 폴더째 제외하고 Release 자산으로 배포한다. (README §8)
+model/artifacts/
+
+# 예외: YuNet 얼굴 탐지기.
+# 위 *.onnx 규칙에 걸리지만 이것만 되살린다. 근거 세 가지:
+#   - 용량 0.2MB (데이터셋·CNN 가중치와 자릿수가 다르다)
+#   - OpenCV Zoo 공개 배포, Apache-2.0 → 재배포 제한 없음
+#   - 얼굴 영상이 아니라 사전학습 가중치 → 초상권 무관
+# 없으면 02_INFER_YuNet이 첫 셀에서 멈추므로 저장소에 함께 둔다.
+!model/detectors/face_detection_yunet_2023mar.onnx
 
 # ---------- 대용량 데이터 포맷 ----------
 *.zip
