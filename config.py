@@ -61,23 +61,7 @@ DATA_DIR: Path = PROJECT_ROOT / "data"
 #: 실행 결과(로그, 캡처, 데모 영상). git 추적 제외.
 OUTPUTS_DIR: Path = PROJECT_ROOT / "outputs"
 
-#: 학습 노트북(01_TRAIN)과 추론 노트북(02_INFER_YuNet)이 있는 곳. git 추적.
-MODEL_DIR: Path = PROJECT_ROOT / "model"
-
-#: 학습 산출물 — eye/yawn CNN 가중치(.keras), history(.json). git 추적 제외.
-#: 파일당 약 45MB라 저장소에 넣지 않는다. 받는 방법은 README §8 참고.
-ARTIFACT_DIR: Path = MODEL_DIR / "artifacts"
-
-#: 외부에서 배포된 탐지기 가중치. git 추적 대상.
-#: 현재 YuNet(face_detection_yunet_2023mar.onnx, 0.2MB, Apache-2.0) 하나뿐이다.
-#: 소용량이고 재배포가 허용되므로 §8의 "모델 제외" 원칙에서 예외로 둔다.
-DETECTOR_DIR: Path = MODEL_DIR / "detectors"
-
-#: YuNet 얼굴 탐지기. 02_INFER_YuNet의 파이프라인 진입점이라 없으면 아무것도 못 한다.
-YUNET_MODEL: Path = DETECTOR_DIR / "face_detection_yunet_2023mar.onnx"
-
-#: 없으면 만들어 주는 폴더. DETECTOR_DIR은 git이 파일과 함께 가져오므로 제외한다.
-_MANAGED_DIRS: tuple[Path, ...] = (DATA_DIR, OUTPUTS_DIR, ARTIFACT_DIR)
+_MANAGED_DIRS: tuple[Path, ...] = (DATA_DIR, OUTPUTS_DIR)
 
 
 # =====================================================================
@@ -118,24 +102,8 @@ def describe() -> None:
     절대경로가 필요하면 config.PROJECT_ROOT를 직접 참조한다.
     """
     print(f"PROJECT_ROOT : {PROJECT_ROOT.name}")
-    for name, path in (
-        ("DATA_DIR", DATA_DIR),
-        ("OUTPUTS_DIR", OUTPUTS_DIR),
-        ("MODEL_DIR", MODEL_DIR),
-        ("ARTIFACT_DIR", ARTIFACT_DIR),
-        ("DETECTOR_DIR", DETECTOR_DIR),
-    ):
+    for name, path in (("DATA_DIR", DATA_DIR), ("OUTPUTS_DIR", OUTPUTS_DIR)):
         mark = "OK" if path.is_dir() else "MISSING"
-        print(f"  [{mark:<7}] {name:<12}: {_rel(path)}")
-
-    # 가중치는 폴더만 있어도 소용없다. 파일 자체를 확인한다.
-    print()
-    for name, path in (
-        ("YuNet", YUNET_MODEL),
-        ("eye_model", ARTIFACT_DIR / "eye_model.keras"),
-        ("yawn_model", ARTIFACT_DIR / "yawn_model.keras"),
-    ):
-        mark = "OK" if path.is_file() else "MISSING"
         print(f"  [{mark:<7}] {name:<12}: {_rel(path)}")
 
 
