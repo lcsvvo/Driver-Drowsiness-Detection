@@ -1,0 +1,91 @@
+{
+  "tag": "dmd__eval-dmd__gray128__ft",
+  "train": [
+    "dmd"
+  ],
+  "eval_source": "dmd",
+  "size": 128,
+  "gray": true,
+  "sharpen": false,
+  "pretrained": "eye_mrl__eval-dmd__gray128.keras",
+  "threshold": 0.9500000000000001,
+  "threshold_reached_target": true,
+  "threshold_grid_saturated": false,
+  "target_recall": 0.9,
+  "test_main": {
+    "threshold": 0.95,
+    "n": 3805,
+    "accuracy": 0.9627,
+    "closed_recall": 0.8811,
+    "closed_precision": 0.806,
+    "closed_f1": 0.8419,
+    "confusion": {
+      "closed_as_closed": 378,
+      "closed_as_open": 51,
+      "open_as_closed": 91,
+      "open_as_open": 3285
+    }
+  },
+  "test_main_at_050": {
+    "threshold": 0.5,
+    "n": 3805,
+    "accuracy": 0.9141,
+    "closed_recall": 0.9487,
+    "closed_precision": 0.5716,
+    "closed_f1": 0.7134,
+    "confusion": {
+      "closed_as_closed": 407,
+      "closed_as_open": 22,
+      "open_as_closed": 305,
+      "open_as_open": 3071
+    }
+  },
+  "test_other": {
+    "threshold": 0.95,
+    "n": 12155,
+    "accuracy": 0.8831,
+    "closed_recall": 0.9195,
+    "closed_precision": 0.8593,
+    "closed_f1": 0.8884,
+    "confusion": {
+      "closed_as_closed": 5654,
+      "closed_as_open": 495,
+      "open_as_closed": 926,
+      "open_as_open": 5080
+    }
+  },
+  "by_glasses": {
+    "glasses=0": {
+      "threshold": 0.95,
+      "n": 2894,
+      "accuracy": 0.9803,
+      "closed_recall": 0.7316,
+      "closed_precision": 0.9586,
+      "closed_f1": 0.8299,
+      "confusion": {
+        "closed_as_closed": 139,
+        "closed_as_open": 51,
+        "open_as_closed": 6,
+        "open_as_open": 2698
+      }
+    },
+    "glasses=1": {
+      "threshold": 0.95,
+      "n": 911,
+      "accuracy": 0.9067,
+      "closed_recall": 1.0,
+      "closed_precision": 0.7377,
+      "closed_f1": 0.849,
+      "confusion": {
+        "closed_as_closed": 239,
+        "closed_as_open": 0,
+        "open_as_closed": 85,
+        "open_as_open": 587
+      }
+    }
+  },
+  "n_train": 10956,
+  "n_val": 3338,
+  "n_test_frames": 3805,
+  "model": "model\\artifacts\\eye_dmd__eval-dmd__gray128__ft.keras"
+}
