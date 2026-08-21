@@ -1,0 +1,420 @@
+{
+  "tag": "yawn_mouthopen__distill-cnn_small__from-cnn_large+mbnetv2_035__T4-a0.3__eval-face__gray128",
+  "train": [
+    "face"
+  ],
+  "eval_view": "face",
+  "size": 128,
+  "gray": true,
+  "sharpen": false,
+  "dataset": "yawn_mouthopen",
+  "classes": {
+    "0": "yawn",
+    "1": "no_yawn"
+  },
+  "threshold": 0.22,
+  "threshold_reached_target": true,
+  "threshold_grid_saturated": false,
+  "target_recall": 0.9,
+  "test_main": {
+    "threshold": 0.22,
+    "n": 807,
+    "accuracy": 0.5911,
+    "yawn_recall": 0.8368,
+    "yawn_precision": 0.5843,
+    "yawn_f1": 0.6881,
+    "false_positive_rate": 0.6962,
+    "precision_at_real_prior": 0.1636,
+    "real_prior": 0.14,
+    "confusion": {
+      "yawn_as_yawn": 364,
+      "yawn_as_no": 71,
+      "no_as_yawn": 259,
+      "no_as_no": 113
+    }
+  },
+  "test_main_at_050": {
+    "threshold": 0.5,
+    "n": 807,
+    "accuracy": 0.7472,
+    "yawn_recall": 0.6069,
+    "yawn_precision": 0.8889,
+    "yawn_f1": 0.7213,
+    "false_positive_rate": 0.0887,
+    "precision_at_real_prior": 0.5269,
+    "real_prior": 0.14,
+    "confusion": {
+      "yawn_as_yawn": 264,
+      "yawn_as_no": 171,
+      "no_as_yawn": 33,
+      "no_as_no": 339
+    }
+  },
+  "test_other": null,
+  "by_yawn_type": {},
+  "by_glasses": {
+    "glasses=False": {
+      "threshold": 0.22,
+      "n": 337,
+      "accuracy": 0.546,
+      "yawn_recall": 0.663,
+      "yawn_precision": 0.5728,
+      "yawn_f1": 0.6146,
+      "false_positive_rate": 0.5948,
+      "precision_at_real_prior": 0.1536,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 122,
+        "yawn_as_no": 62,
+        "no_as_yawn": 91,
+        "no_as_no": 62
+      }
+    },
+    "glasses=True": {
+      "threshold": 0.22,
+      "n": 470,
+      "accuracy": 0.6234,
+      "yawn_recall": 0.9641,
+      "yawn_precision": 0.5902,
+      "yawn_f1": 0.7322,
+      "false_positive_rate": 0.7671,
+      "precision_at_real_prior": 0.1698,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 242,
+        "yawn_as_no": 9,
+        "no_as_yawn": 168,
+        "no_as_no": 51
+      }
+    }
+  },
+  "by_subject": {
+    "mF02": {
+      "threshold": 0.5,
+      "n": 79,
+      "accuracy": 0.3671,
+      "yawn_recall": 0.0,
+      "yawn_precision": 0.0,
+      "yawn_f1": 0.0,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 0.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 0,
+        "yawn_as_no": 50,
+        "no_as_yawn": 0,
+        "no_as_no": 29
+      }
+    },
+    "mF07": {
+      "threshold": 0.5,
+      "n": 20,
+      "accuracy": 0.75,
+      "yawn_recall": 0.9375,
+      "yawn_precision": 0.7895,
+      "yawn_f1": 0.8571,
+      "false_positive_rate": 1.0,
+      "precision_at_real_prior": 0.1324,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 15,
+        "yawn_as_no": 1,
+        "no_as_yawn": 4,
+        "no_as_no": 0
+      }
+    },
+    "mF08": {
+      "threshold": 0.5,
+      "n": 45,
+      "accuracy": 0.9778,
+      "yawn_recall": 1.0,
+      "yawn_precision": 0.9655,
+      "yawn_f1": 0.9825,
+      "false_positive_rate": 0.0588,
+      "precision_at_real_prior": 0.7346,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 28,
+        "yawn_as_no": 0,
+        "no_as_yawn": 1,
+        "no_as_no": 16
+      }
+    },
+    "mF09": {
+      "threshold": 0.5,
+      "n": 53,
+      "accuracy": 0.6981,
+      "yawn_recall": 0.0,
+      "yawn_precision": 0.0,
+      "yawn_f1": 0.0,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 0.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 0,
+        "yawn_as_no": 16,
+        "no_as_yawn": 0,
+        "no_as_no": 37
+      }
+    },
+    "mF15": {
+      "threshold": 0.5,
+      "n": 40,
+      "accuracy": 0.775,
+      "yawn_recall": 0.5909,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.7429,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 13,
+        "yawn_as_no": 9,
+        "no_as_yawn": 0,
+        "no_as_no": 18
+      }
+    },
+    "mF16": {
+      "threshold": 0.5,
+      "n": 67,
+      "accuracy": 0.7313,
+      "yawn_recall": 0.5854,
+      "yawn_precision": 0.96,
+      "yawn_f1": 0.7273,
+      "false_positive_rate": 0.0385,
+      "precision_at_real_prior": 0.7124,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 24,
+        "yawn_as_no": 17,
+        "no_as_yawn": 1,
+        "no_as_no": 25
+      }
+    },
+    "mF18": {
+      "threshold": 0.5,
+      "n": 74,
+      "accuracy": 0.7973,
+      "yawn_recall": 0.4828,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.6512,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 14,
+        "yawn_as_no": 15,
+        "no_as_yawn": 0,
+        "no_as_no": 45
+      }
+    },
+    "mF41": {
+      "threshold": 0.5,
+      "n": 31,
+      "accuracy": 0.871,
+      "yawn_recall": 0.6,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.75,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 6,
+        "yawn_as_no": 4,
+        "no_as_yawn": 0,
+        "no_as_no": 21
+      }
+    },
+    "mM03": {
+      "threshold": 0.5,
+      "n": 55,
+      "accuracy": 0.6909,
+      "yawn_recall": 0.5897,
+      "yawn_precision": 0.9583,
+      "yawn_f1": 0.7302,
+      "false_positive_rate": 0.0625,
+      "precision_at_real_prior": 0.6057,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 23,
+        "yawn_as_no": 16,
+        "no_as_yawn": 1,
+        "no_as_no": 15
+      }
+    },
+    "mM06": {
+      "threshold": 0.5,
+      "n": 34,
+      "accuracy": 0.4412,
+      "yawn_recall": 1.0,
+      "yawn_precision": 0.4412,
+      "yawn_f1": 0.6122,
+      "false_positive_rate": 1.0,
+      "precision_at_real_prior": 0.14,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 15,
+        "yawn_as_no": 0,
+        "no_as_yawn": 19,
+        "no_as_no": 0
+      }
+    },
+    "mM08": {
+      "threshold": 0.5,
+      "n": 20,
+      "accuracy": 0.95,
+      "yawn_recall": 1.0,
+      "yawn_precision": 0.9474,
+      "yawn_f1": 0.973,
+      "false_positive_rate": 0.5,
+      "precision_at_real_prior": 0.2456,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 18,
+        "yawn_as_no": 0,
+        "no_as_yawn": 1,
+        "no_as_no": 1
+      }
+    },
+    "mM17": {
+      "threshold": 0.5,
+      "n": 23,
+      "accuracy": 0.5217,
+      "yawn_recall": 0.5217,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.6857,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 12,
+        "yawn_as_no": 11,
+        "no_as_yawn": 0,
+        "no_as_no": 0
+      }
+    },
+    "mM23": {
+      "threshold": 0.5,
+      "n": 71,
+      "accuracy": 0.8592,
+      "yawn_recall": 0.9107,
+      "yawn_precision": 0.9107,
+      "yawn_f1": 0.9107,
+      "false_positive_rate": 0.3333,
+      "precision_at_real_prior": 0.3078,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 51,
+        "yawn_as_no": 5,
+        "no_as_yawn": 5,
+        "no_as_no": 10
+      }
+    },
+    "mM25": {
+      "threshold": 0.5,
+      "n": 112,
+      "accuracy": 0.9554,
+      "yawn_recall": 0.8621,
+      "yawn_precision": 0.9615,
+      "yawn_f1": 0.9091,
+      "false_positive_rate": 0.012,
+      "precision_at_real_prior": 0.9209,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 25,
+        "yawn_as_no": 4,
+        "no_as_yawn": 1,
+        "no_as_no": 82
+      }
+    },
+    "mM30": {
+      "threshold": 0.5,
+      "n": 22,
+      "accuracy": 0.9545,
+      "yawn_recall": 0.9091,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.9524,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 10,
+        "yawn_as_no": 1,
+        "no_as_yawn": 0,
+        "no_as_no": 11
+      }
+    },
+    "mM35": {
+      "threshold": 0.5,
+      "n": 20,
+      "accuracy": 0.75,
+      "yawn_recall": 0.0,
+      "yawn_precision": 0.0,
+      "yawn_f1": 0.0,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 0.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 0,
+        "yawn_as_no": 5,
+        "no_as_yawn": 0,
+        "no_as_no": 15
+      }
+    },
+    "mM39": {
+      "threshold": 0.5,
+      "n": 25,
+      "accuracy": 0.52,
+      "yawn_recall": 0.3333,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.5,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 6,
+        "yawn_as_no": 12,
+        "no_as_yawn": 0,
+        "no_as_no": 7
+      }
+    },
+    "mM47": {
+      "threshold": 0.5,
+      "n": 16,
+      "accuracy": 0.6875,
+      "yawn_recall": 0.4444,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.6154,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 4,
+        "yawn_as_no": 5,
+        "no_as_yawn": 0,
+        "no_as_no": 7
+      }
+    }
+  },
+  "subject_spread": {
+    "n_subjects": 18,
+    "accuracy_min": 0.3671,
+    "accuracy_max": 0.9778,
+    "accuracy_std": 0.1765
+  },
+  "n_train": 2723,
+  "n_val": 886,
+  "n_test": 807,
+  "model": "model/artifacts/yawn_yawn_mouthopen__distill-cnn_small__from-cnn_large+mbnetv2_035__T4-a0.3__eval-face__gray128.keras",
+  "arch": "cnn_small",
+  "zoo_kind": "cnn",
+  "training": "distilled",
+  "params": 822018,
+  "teacher_tags": [
+    "yawn_mouthopen__zoo-cnn_large__eval-face__gray128",
+    "yawn_mouthopen__zoo-mbnetv2_035__eval-face__rgb128"
+  ],
+  "teacher_label": "cnn_large+mbnetv2_035",
+  "temperature": 4.0,
+  "alpha": 0.3
+}

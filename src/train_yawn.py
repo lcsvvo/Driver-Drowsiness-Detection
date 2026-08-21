@@ -34,6 +34,12 @@ split 은 manifest 에 이미 박혀 있고(피험자 단위), 눈 데이터셋�
     python src/train_yawn.py --train body
     python src/train_yawn.py --train face body
     python src/train_yawn.py --train face --limit 400      # 스모크
+
+    다른 데이터셋(예: yawn_mouthopen)을 쓰려면 --manifest 로 manifest.csv 를 직접 준다.
+    dataset_root 는 <manifest>/../../.. 로 자동 추정되고, 아티팩트 태그에
+    데이터셋 이름이 접두어로 붙어 DMD 가중치를 덮어쓰지 않는다.
+    python src/train_yawn.py --train face \\
+        --manifest ../yawn_mouthopen/yawn_mouthopen/metadata/manifest.csv
 """
 from __future__ import annotations
 
@@ -67,6 +73,9 @@ DATASET_CANDIDATES = (
     config.PROJECT_ROOT / "Dataset",
 )
 
+#: DMD(processed) 관례 위치. <dataset_root>/<pkg>/metadata/manifest.csv 규칙이고,
+#: yawn_mouthopen 등 다른 데이터셋도 pkg 이름만 다를 뿐 같은 규칙을 따른다
+#: (resolve_dataset() 의 --manifest 경로 추정이 이 규칙을 거꾸로 푼다).
 MANIFEST_REL = Path("processed") / "metadata" / "manifest.csv"
 
 #: 소스 필터를 적용한 부분집합 CSV 를 두는 곳. tempdir 대신 outputs 아래 고정 이름으로
@@ -83,24 +92,44 @@ REAL_YAWN_PRIOR = 0.14
 # =====================================================================
 # 1. 데이터셋 위치
 # =====================================================================
-def dataset_root(explicit: str | None = None) -> Path:
-    """하품 데이터셋 루트(= manifest 의 상대경로가 붙는 기준 폴더)."""
-    if explicit:
-        p = Path(explicit).expanduser().resolve()
-        if not (p / MANIFEST_REL).exists():
-            raise SystemExit(f"manifest 가 없습니다: {p / MANIFEST_REL}")
-        return p
+def resolve_dataset(manifest: str | None = None,
+                    root: str | None = None) -> tuple[Path, Path]:
+    """(dataset_root, manifest_path) 를 정한다.
+
+    --manifest 를 직접 주면 그 경로를 쓰고, dataset_root 는 <root>/<pkg>/metadata/
+    manifest.csv 규칙을 거꾸로 풀어 3단계 위로 추정한다(--dataset-root 를 같이 주면
+    그 값이 우선한다). 둘 다 실측 규칙 — DMD manifest 는
+    "<root>/processed/metadata/manifest.csv", yawn_mouthopen manifest 는
+    "<root>/yawn_mouthopen/metadata/manifest.csv" — 를 그대로 따른다.
+
+    --manifest 를 안 주면 기존 DATASET_CANDIDATES + MANIFEST_REL 관례(DMD/processed)
+    로 찾는다.
+    """
+    if manifest:
+        mp = Path(manifest).expanduser().resolve()
+        if not mp.exists():
+            raise SystemExit(f"manifest 가 없습니다: {mp}")
+        r = Path(root).expanduser().resolve() if root else mp.parent.parent.parent
+        return r, mp
+
+    if root:
+        p = Path(root).expanduser().resolve()
+        mp = p / MANIFEST_REL
+        if not mp.exists():
+            raise SystemExit(f"manifest 가 없습니다: {mp}")
+        return p, mp
 
     tried = []
     for c in DATASET_CANDIDATES:
-        if (c / MANIFEST_REL).exists():
-            return c.resolve()
+        mp = c / MANIFEST_REL
+        if mp.exists():
+            return c.resolve(), mp
         tried.append(str(c))
 
     raise SystemExit(
         "하품 데이터셋을 찾지 못했습니다. 확인한 위치:\n  "
         + "\n  ".join(tried)
-        + "\n--dataset-root 로 직접 지정하세요.")
+        + "\n--dataset-root 또는 --manifest 로 직접 지정하세요.")
 
 
 # =====================================================================
@@ -140,9 +169,8 @@ REQUIRED_COLS = {"path", "view", "session", "subject", "frame", "split",
                  "label", "class_idx", "is_yawn", "glasses"}
 
 
-def load_manifest(root: Path) -> pd.DataFrame:
-    mf = root / MANIFEST_REL
-    df = pd.read_csv(mf)
+def load_manifest(manifest_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(manifest_path)
     missing = REQUIRED_COLS - set(df.columns)
     if missing:
         raise SystemExit(f"manifest 컬럼 누락: {sorted(missing)}")
@@ -153,10 +181,11 @@ def load_manifest(root: Path) -> pd.DataFrame:
 
 
 def subset(df: pd.DataFrame, views, split: str,
-           limit: int | None = None) -> tuple[Path, pd.DataFrame]:
+           limit: int | None = None, tag_prefix: str = "") -> tuple[Path, pd.DataFrame]:
     """view·split 로 걸러 부분집합 CSV 를 쓰고 (경로, 데이터프레임) 반환.
 
     limit 을 주면 클래스 비율을 유지한 채 그만큼으로 줄인다. 스모크 테스트용이다.
+    tag_prefix 는 데이터셋별 파일명 충돌을 막는다(예: "yawn_mouthopen__").
     """
     sub = df[(df.view.isin(views)) & (df.split == split)].reset_index(drop=True)
     if sub.empty:
@@ -170,7 +199,7 @@ def subset(df: pd.DataFrame, views, split: str,
         sub = sub.loc[sorted(keep)].reset_index(drop=True)   # 원래 순서 복원
 
     SUBSET_DIR.mkdir(parents=True, exist_ok=True)
-    out = SUBSET_DIR / f"{'+'.join(views)}__{split}{f'__n{limit}' if limit else ''}.csv"
+    out = SUBSET_DIR / f"{tag_prefix}{'+'.join(views)}__{split}{f'__n{limit}' if limit else ''}.csv"
     sub.to_csv(out, index=False)
     return out, sub
 
@@ -285,26 +314,31 @@ def recall_by_yawn_type(sub: pd.DataFrame, p_yawn: np.ndarray, thr: float) -> di
 # =====================================================================
 def run_experiment(train, eval_view="face", size=128, gray=True, sharpen=False,
                    epochs=20, batch=64, lr=None, target_recall=0.90,
-                   verbose=1, limit=None, root=None) -> dict:
+                   verbose=1, limit=None, root=None, manifest=None) -> dict:
     """A/B/C 중 하나를 실행하고 지표 dict 를 반환한다."""
     train = list(train)
     bad = set(train) - set(VIEWS)
     if bad:
         raise SystemExit(f"알 수 없는 view: {sorted(bad)}")
 
-    root = Path(root) if root else dataset_root()
+    root, mp = resolve_dataset(manifest, root)
+    #: manifest 가 들어 있는 패키지 폴더 이름. DMD 관례("processed")면 기존 파일명을
+    #: 그대로 유지해 기존 아티팩트를 덮어쓰지 않고, 다른 데이터셋이면 태그에 접두어를
+    #: 붙여 구분한다(예: "yawn_mouthopen__face__eval-face__gray128").
+    dataset_pkg = mp.parent.parent.name
+    tag_prefix = "" if dataset_pkg == "processed" else f"{dataset_pkg}__"
 
-    tag = (f"{'+'.join(train)}__eval-{eval_view}__"
+    tag = (f"{tag_prefix}{'+'.join(train)}__eval-{eval_view}__"
            f"{'gray' if gray else 'rgb'}{size}"
            f"{'__sharp' if sharpen else ''}{'__smoke' if limit else ''}")
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     model_path = ARTIFACT_DIR / f"yawn_{tag}.keras"
     metrics_path = ARTIFACT_DIR / f"yawn_{tag}_metrics.json"
 
-    df = load_manifest(root)
-    tr_csv, tr_sub = subset(df, train, "train", limit)
-    va_csv, va_sub = subset(df, train, "val", limit)   # 모델 선택은 학습과 같은 도메인에서
-    te_csv, te_sub = subset(df, [eval_view], "test", limit)
+    df = load_manifest(mp)
+    tr_csv, tr_sub = subset(df, train, "train", limit, tag_prefix)
+    va_csv, va_sub = subset(df, train, "val", limit, tag_prefix)   # 모델 선택은 학습과 같은 도메인에서
+    te_csv, te_sub = subset(df, [eval_view], "test", limit, tag_prefix)
 
     train_ds = dataset_of(tr_csv, "train", size, gray, sharpen, batch, True, root)[0]
     val_ds = dataset_of(va_csv, "val", size, gray, sharpen, batch, False, root)[0]
@@ -335,7 +369,8 @@ def run_experiment(train, eval_view="face", size=128, gray=True, sharpen=False,
 
     out = _evaluate(best, df, tag, train, eval_view, size, gray, sharpen, batch,
                     target_recall, limit, va_sub, val_ds, te_sub, test_ds,
-                    n_train=len(tr_sub), model_path=model_path, root=root)
+                    n_train=len(tr_sub), model_path=model_path, root=root,
+                    tag_prefix=tag_prefix, dataset_pkg=dataset_pkg)
     metrics_path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     print("\n저장:", config._rel(model_path))
     print("저장:", config._rel(metrics_path))
@@ -344,7 +379,8 @@ def run_experiment(train, eval_view="face", size=128, gray=True, sharpen=False,
 
 def _evaluate(model, df, tag, train, eval_view, size, gray, sharpen, batch,
               target_recall, limit, va_sub, val_ds, te_sub, test_ds,
-              n_train, model_path, root) -> dict:
+              n_train, model_path, root, tag_prefix: str = "",
+              dataset_pkg: str = "processed") -> dict:
     """임계값 선택 + test 평가 + 대조군 + 조건별 분해. 학습은 하지 않는다."""
     # --- 임계값은 val 에서 고른다 (test 에서 고르면 낙관 편향) ---
     va_p = yawn_prob(model, val_ds)
@@ -370,7 +406,7 @@ def _evaluate(model, df, tag, train, eval_view, size, gray, sharpen, batch,
     other = next((v for v in VIEWS if v != eval_view), None)
     m_other = None
     if other and not df[(df.view == other) & (df.split == "test")].empty:
-        ot_csv, ot_sub = subset(df, [other], "test", limit)
+        ot_csv, ot_sub = subset(df, [other], "test", limit, tag_prefix)
         ot_ds = dataset_of(ot_csv, "test", size, gray, sharpen, batch, False, root)[0]
         m_other = metrics_at(ot_sub.is_yawn.values, yawn_prob(model, ot_ds), thr)
         report(f"{other} test @val-thr (대조군)", m_other)
@@ -419,7 +455,7 @@ def _evaluate(model, df, tag, train, eval_view, size, gray, sharpen, batch,
           f"{subject_spread['accuracy_max']:.3f} (std {subject_spread['accuracy_std']:.3f})")
 
     return dict(tag=tag, train=train, eval_view=eval_view, size=size,
-                gray=gray, sharpen=sharpen,
+                gray=gray, sharpen=sharpen, dataset=dataset_pkg,
                 classes={"0": "yawn", "1": "no_yawn"},
                 threshold=thr, threshold_reached_target=reached,
                 threshold_grid_saturated=saturated, target_recall=target_recall,
@@ -431,11 +467,14 @@ def _evaluate(model, df, tag, train, eval_view, size, gray, sharpen, batch,
 
 
 def reevaluate(tag: str, target_recall: float | None = None, batch: int = 64,
-               root=None) -> dict:
+               root=None, manifest=None) -> dict:
     """저장된 모델로 임계값 선택과 평가만 다시 한다. **재학습하지 않는다.**
 
     평가 항목을 추가한 뒤 학습을 다시 돌리지 않고 metrics JSON 을 갱신하기 위한
     함수다. 학습 조건(train/eval/size/gray)은 기존 JSON 에서 읽으므로 인자로 받지 않는다.
+    데이터셋(dataset/manifest)도 기존 JSON 의 "dataset" 필드로 추정하되, 옛 JSON(필드
+    없음)은 DMD("processed") 관례로 가정한다. 다른 데이터셋을 재평가하려면 --manifest
+    로 명시한다.
     """
     model_path = ARTIFACT_DIR / f"yawn_{tag}.keras"
     metrics_path = ARTIFACT_DIR / f"yawn_{tag}_metrics.json"
@@ -447,11 +486,13 @@ def reevaluate(tag: str, target_recall: float | None = None, batch: int = 64,
     train, eval_view = old["train"], old["eval_view"]
     size, gray, sharpen = old["size"], old["gray"], old["sharpen"]
     target = old["target_recall"] if target_recall is None else target_recall
+    dataset_pkg = old.get("dataset", "processed")
+    tag_prefix = "" if dataset_pkg == "processed" else f"{dataset_pkg}__"
 
-    root = Path(root) if root else dataset_root()
-    df = load_manifest(root)
-    va_csv, va_sub = subset(df, train, "val")
-    te_csv, te_sub = subset(df, [eval_view], "test")
+    root, mp = resolve_dataset(manifest, root)
+    df = load_manifest(mp)
+    va_csv, va_sub = subset(df, train, "val", tag_prefix=tag_prefix)
+    te_csv, te_sub = subset(df, [eval_view], "test", tag_prefix=tag_prefix)
     val_ds = dataset_of(va_csv, "val", size, gray, sharpen, batch, False, root)[0]
     test_ds = dataset_of(te_csv, "test", size, gray, sharpen, batch, False, root)[0]
 
@@ -460,7 +501,8 @@ def reevaluate(tag: str, target_recall: float | None = None, batch: int = 64,
 
     out = _evaluate(model, df, tag, train, eval_view, size, gray, sharpen, batch,
                     target, None, va_sub, val_ds, te_sub, test_ds,
-                    n_train=old["n_train"], model_path=model_path, root=root)
+                    n_train=old["n_train"], model_path=model_path, root=root,
+                    tag_prefix=tag_prefix, dataset_pkg=dataset_pkg)
     metrics_path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     print("\n갱신:", config._rel(metrics_path))
     return out
@@ -541,6 +583,9 @@ def main():
     ap.add_argument("--eval", dest="eval_view", default="face", choices=list(VIEWS))
     ap.add_argument("--dataset-root", default=None,
                     help="Dataset 폴더. 생략하면 관례 위치를 순서대로 찾는다")
+    ap.add_argument("--manifest", default=None,
+                    help="manifest.csv 직접 지정 (예: yawn_mouthopen/metadata/manifest.csv). "
+                         "주면 --dataset-root 는 3단계 위로 자동 추정한다")
     ap.add_argument("--size", type=int, default=128)
     ap.add_argument("--rgb", action="store_true", help="컬러 입력 부록 실험용")
     ap.add_argument("--sharpen", action="store_true")
@@ -554,7 +599,7 @@ def main():
 
     run_experiment(a.train, a.eval_view, a.size, not a.rgb, a.sharpen,
                    a.epochs, a.batch, a.lr, a.target_recall,
-                   limit=a.limit, root=a.dataset_root)
+                   limit=a.limit, root=a.dataset_root, manifest=a.manifest)
 
 
 if __name__ == "__main__":

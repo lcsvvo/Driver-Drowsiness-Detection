@@ -99,6 +99,90 @@ def make_dataset(
 
 
 # =====================================================================
+# Distillation 용 — teacher 소프트 라벨을 이미지·정답 라벨과 같은 튜플로 싣는다
+# =====================================================================
+def _read_manifest_extra(csv_path: str, split: str, dataset_root: str,
+                         label_col: str, extra_col: str):
+    """_read_manifest() 와 같은 CSV 읽기 로직에 float 컬럼(extra_col) 하나를 더 얹는다.
+
+    shuffle 은 tf.data.Dataset.from_tensor_slices 의 튜플 전체에 같이 적용되므로,
+    여기서 세 리스트를 같은 인덱스로 만들어 두면 이후 shuffle 을 걸어도 image/label/
+    teacher_prob 정렬이 깨지지 않는다.
+    """
+    paths, labels, extras = [], [], []
+    with open(csv_path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fields = reader.fieldnames or []
+        for col in (label_col, extra_col):
+            if col not in fields:
+                raise ValueError(
+                    f"'{col}' 컬럼이 없습니다: {csv_path}\n  있는 컬럼: {fields}")
+        for row in reader:
+            if row["split"] != split:
+                continue
+            p = row["path"]
+            paths.append(os.path.join(dataset_root, p) if dataset_root else p)
+            labels.append(int(row[label_col]))
+            extras.append(float(row[extra_col]))
+    return paths, labels, extras
+
+
+def make_distill_dataset(
+    csv_path: str,
+    split: str,
+    size: int = 128,
+    grayscale: bool = True,
+    do_sharpen: bool = False,
+    batch_size: int = 64,
+    shuffle: bool = None,
+    seed: int = 42,
+    dataset_root: str = "",
+    label_col: str = "yawn_class",
+    teacher_col: str = "teacher_p_yawn",
+):
+    """teacher 소프트 확률(teacher_col, class0=yawn 확률)이 이미 채워진 CSV 를 받아
+    (image, y_onehot, teacher_probs_2class) 3-튜플 tf.data.Dataset 을 만든다.
+
+    csv_path 는 distill_yawn.cache_teacher_probs() 가 만든, teacher_col 이 추가된
+    subset CSV 여야 한다. make_dataset() 과 전처리 경로는 동일하고(preprocess_eye),
+    teacher 확률만 [p_yawn, 1-p_yawn] 형태로 같이 실어 나른다.
+    """
+    if shuffle is None:
+        shuffle = (split == "train")
+
+    paths, labels, tprobs = _read_manifest_extra(csv_path, split, dataset_root,
+                                                  label_col, teacher_col)
+    if not paths:
+        raise ValueError(f"'{split}' split 에 해당하는 행이 없습니다: {csv_path}")
+    c = channels(grayscale)
+
+    def _load(path, label, teacher_p):
+        def _py(p):
+            p = p.numpy().decode("utf-8")
+            import cv2
+            img = cv2.imread(p, cv2.IMREAD_COLOR)
+            if img is None:
+                raise FileNotFoundError(f"이미지를 열 수 없습니다: {p}")
+            arr = preprocess_eye(img, size=size, grayscale=grayscale,
+                                 do_sharpen=do_sharpen, input_is_bgr=True)
+            return arr.astype(np.float32)
+
+        img = tf.py_function(_py, [path], tf.float32)
+        img.set_shape((size, size, c))
+        y = tf.one_hot(label, 2)
+        t = tf.stack([teacher_p, 1.0 - teacher_p])   # class0=yawn, 학생과 같은 순서
+        return img, y, t
+
+    ds = tf.data.Dataset.from_tensor_slices((paths, labels, tprobs))
+    if shuffle:
+        ds = ds.shuffle(min(len(paths), 4096), seed=seed,
+                        reshuffle_each_iteration=True)
+    ds = ds.map(_load, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    return ds, len(paths)
+
+
+# =====================================================================
 # 추론용 crop — 학습 데이터가 잘린 방식과 같게 자른다
 # =====================================================================
 #: Dataset/scripts/build_dmd_yawn_dataset.py 의 MARGIN 과 같은 값이어야 한다.
