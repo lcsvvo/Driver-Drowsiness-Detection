@@ -25,10 +25,19 @@
    이 조건에 걸리면 **아예 쌓지 않는다.** 뒤에서 점수만 누르면 acc 는 차 있는데
    표시만 판정선 바로 아래에 붙어 멈춘 것처럼 보인다.
 
-**하품이 아니면 출력이 정확히 0 이다.** 증거가 문턱에 못 미치는 동안 막대가 어중간하게
-떠 있으면 "곧 터질 것 같은" 인상을 주는데 실제로는 아무 일도 없다. 켜졌을 때만 0.5 위의
-값을 내고, 끌 때는 더 낮은 문턱을 쓴다(히스테리시스) - 하품 한 번이 판정선 근처에서
-깜빡이며 여러 번 경보로 세어지지 않게.
+**`score` 는 0~1 연속값이다.** 쌓인 증거(초)를 상한으로 나눈 것이라 그대로 "얼마나
+하품 같은가" 로 읽힌다. 실측 (세션별 최댓값):
+
+    조건            p25     중앙값    p75     p90
+    talking       0.000   0.000   0.000   0.404
+    yawning       0.559   1.000   1.000   1.000
+    DMD 하품(손X)   1.000   1.000   1.000   1.000
+
+입을 안 벌리면 정확히 0, 말하기는 0 근처, 실제 하품은 1 에 붙는다.
+
+발화 판정(`fired`)은 `acc >= fire` 로 따로 내고 히스테리시스를 건다 - 하품 한 번이
+문턱 근처에서 깜빡이며 여러 번 경보로 세어지지 않게. DROWSY EMA 에 넣을 값은
+`alarm` 으로 따로 낸다(그쪽은 0.5 가 판정선인 규칙을 쓴다).
 
 **프레임이 아니라 시간을 센다.** 추론 루프 속도가 입을 벌리면 22Hz, 다물면 30Hz 로
 변하고 PC 마다도 다르기 때문이다. 같은 이유로 `PerclosTracker` 도 프레임 대신 dt 를
@@ -81,8 +90,11 @@ DEFAULT_MAX_GAP = 1.0
 class YawnAccumulator:
     """(시각, p_yawn, open_ratio) 를 계속 받아 시간 누적된 하품 점수를 낸다.
 
-    반환하는 `score` 는 **0.5 가 판정선** 이 되도록 맞춘 값이다. eye_score /
-    yawn_score 와 같은 규칙이라 그대로 막대그래프·EMA 에 넣을 수 있다.
+    반환값
+        score   0~1 연속값. "얼마나 하품 같은가". 표시용
+        alarm   0.5 가 판정선인 값. DROWSY EMA 용 (eye_score 와 같은 규칙)
+        fired   히스테리시스가 걸린 발화 여부. 실제 판정은 이것을 쓴다
+        acc     쌓인 증거(초).  peak  최근 창의 최대 open_ratio
     """
 
     def __init__(self, evidence: float = DEFAULT_EVIDENCE,
@@ -147,14 +159,23 @@ class YawnAccumulator:
             self._on = self.acc >= self.fire
 
         # ---- 4. 점수 ----
-        # **하품이 아니면 0 이다.** 증거가 문턱에 못 미치는 동안 막대가 어중간하게
-        # 떠 있으면 "곧 터질 것 같은" 인상을 주는데, 실제로는 아무 일도 일어나지
-        # 않는다. 켜졌을 때만 0.5 위의 값을 낸다.
-        if not self._on:
-            score = 0.0
-        else:
-            score = 0.5 + 0.5 * (self.acc - self.fire) / max(self.cap - self.fire, 1e-6)
-            score = min(max(score, 0.5), 1.0)
+        # **연속값 0~1.** 쌓인 증거(초)를 상한으로 나눈 것이라 그대로 "얼마나 하품
+        # 같은가" 로 읽힌다.
+        #
+        #   입을 안 벌림 / 크게 벌린 적 없음  ->  정확히 0   (아예 안 쌓인다)
+        #   말하다 잠깐 튄 것               ->  0 근처     (쌓이기 전에 식는다)
+        #   실제 하품                       ->  1 에 근접   (2.2초면 상한에 닿는다)
+        score = min(max(self.acc / self.cap, 0.0), 1.0)
 
-        return {"score": score, "acc": self.acc, "peak": peak,
+        # DROWSY EMA 용 값은 따로 낸다. 그쪽은 "0.5 가 판정선" 규칙을 쓰는데
+        # (eye_score / yawn_score 와 같은 규칙), score 는 그 규칙을 따르지 않는다.
+        # 발화 지점(fire)이 상한의 15% 라 score 를 그대로 넣으면 하품인데도
+        # DROWSY 가 안 오른다.
+        if not self._on:
+            alarm = 0.5 * min(self.acc / max(self.fire, 1e-6), 1.0)
+        else:
+            alarm = 0.5 + 0.5 * (self.acc - self.fire) / max(self.cap - self.fire, 1e-6)
+            alarm = min(max(alarm, 0.5), 1.0)
+
+        return {"score": score, "alarm": alarm, "acc": self.acc, "peak": peak,
                 "fired": self._on, "peak_gated": gated}
