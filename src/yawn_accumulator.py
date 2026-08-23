@@ -22,6 +22,13 @@
 1. **얼마나 오래 확신했나** — 누수 적분기. `p_yawn` 이 판정선을 넘는 동안 시간을 쌓고,
    못 넘으면 더 빨리 깎는다. 말하기의 짧은 스파이크는 쌓이기 전에 식는다.
 2. **얼마나 크게 벌렸나** — 최근 창의 최대 `open_ratio`. 말하기는 0.20 을 잘 못 넘는다.
+   이 조건에 걸리면 **아예 쌓지 않는다.** 뒤에서 점수만 누르면 acc 는 차 있는데
+   표시만 판정선 바로 아래에 붙어 멈춘 것처럼 보인다.
+
+**하품이 아니면 출력이 정확히 0 이다.** 증거가 문턱에 못 미치는 동안 막대가 어중간하게
+떠 있으면 "곧 터질 것 같은" 인상을 주는데 실제로는 아무 일도 없다. 켜졌을 때만 0.5 위의
+값을 내고, 끌 때는 더 낮은 문턱을 쓴다(히스테리시스) - 하품 한 번이 판정선 근처에서
+깜빡이며 여러 번 경보로 세어지지 않게.
 
 **프레임이 아니라 시간을 센다.** 추론 루프 속도가 입을 벌리면 22Hz, 다물면 30Hz 로
 변하고 PC 마다도 다르기 때문이다. 같은 이유로 `PerclosTracker` 도 프레임 대신 dt 를
@@ -62,6 +69,10 @@ DEFAULT_DECAY = 3.0
 DEFAULT_PEAK_WINDOW = 3.0
 DEFAULT_PEAK_MIN = 0.20
 
+#: 한 번 발화하면 acc 가 fire*RELEASE 밑으로 떨어질 때까지 유지한다(히스테리시스).
+#: 하품 한 번이 판정선 근처에서 깜빡이며 여러 번 경보로 세어지는 것을 막는다.
+DEFAULT_RELEASE = 0.4
+
 #: 프레임 간격이 이보다 벌어지면 잘라 쓴다. 셀을 멈췄다 재개하거나 카메라가
 #: 스톨하면 dt 가 수 초로 튀는데, 그 한 프레임이 누적을 통째로 채우면 안 된다.
 DEFAULT_MAX_GAP = 1.0
@@ -80,6 +91,7 @@ class YawnAccumulator:
                  decay: float = DEFAULT_DECAY,
                  peak_window: float = DEFAULT_PEAK_WINDOW,
                  peak_min: float = DEFAULT_PEAK_MIN,
+                 release: float = DEFAULT_RELEASE,
                  max_gap: float = DEFAULT_MAX_GAP):
         self.evidence = float(evidence)
         self.fire = float(fire)
@@ -87,11 +99,13 @@ class YawnAccumulator:
         self.decay = float(decay)
         self.peak_window = float(peak_window)
         self.peak_min = float(peak_min)
+        self.release = float(release)
         self.max_gap = float(max_gap)
         self.reset()
 
     def reset(self) -> None:
         self.acc = 0.0
+        self._on = False
         self._prev_t = None
         self._peaks: deque = deque()      # (t, open_ratio)
 
@@ -101,13 +115,7 @@ class YawnAccumulator:
         dt = 0.0 if self._prev_t is None else min(max(t - self._prev_t, 0.0), self.max_gap)
         self._prev_t = t
 
-        # ---- 1. 누수 적분 ----
-        step = (float(p_yawn) - self.evidence) * dt
-        if p_yawn < self.evidence:
-            step *= self.decay                      # 증거가 없으면 빨리 식는다
-        self.acc = min(self.cap, max(0.0, self.acc + step))
-
-        # ---- 2. 최근 창의 최대 벌림 ----
+        # ---- 1. 최근 창의 최대 벌림 ----
         # 못 쟀으면(None) 창에 넣지 않는다. 넣으면 0 으로 들어가 최댓값을 흐린다.
         if open_ratio is not None:
             self._peaks.append((t, float(open_ratio)))
@@ -115,18 +123,38 @@ class YawnAccumulator:
             self._peaks.popleft()
         peak = max((r for _, r in self._peaks), default=0.0)
 
-        # ---- 3. 0.5 가 판정선이 되도록 정규화 ----
-        if self.acc < self.fire:
-            score = 0.5 * self.acc / max(self.fire, 1e-6)
+        # ---- 2. 누수 적분 ----
+        # 최근에 크게 벌린 적이 없으면 **증거로 치지 않는다.** 말하기는 입을 크게
+        # 벌리지 않으므로(최대 벌림 중앙값 0.195 대 하품 0.453) 여기서 걸러진다.
+        #
+        # 이 조건을 뒤에서 점수만 누르는 식으로 두면, acc 는 계속 차 있는데 표시만
+        # 판정선 바로 아래(0.49)에 붙어 멈춘 것처럼 보인다. 애초에 안 쌓는 편이
+        # 동작도 표시도 정직하다.
+        gated = peak < self.peak_min
+        p_eff = 0.0 if gated else float(p_yawn)
+
+        step = (p_eff - self.evidence) * dt
+        if p_eff < self.evidence:
+            step *= self.decay                      # 증거가 없으면 빨리 식는다
+        self.acc = min(self.cap, max(0.0, self.acc + step))
+
+        # ---- 3. 발화 판정 (히스테리시스) ----
+        # 켜지는 문턱과 꺼지는 문턱을 다르게 둔다. 같으면 하품 한 번이 판정선
+        # 근처에서 깜빡이며 여러 번 경보로 세어진다.
+        if self._on:
+            self._on = self.acc > self.fire * self.release
+        else:
+            self._on = self.acc >= self.fire
+
+        # ---- 4. 점수 ----
+        # **하품이 아니면 0 이다.** 증거가 문턱에 못 미치는 동안 막대가 어중간하게
+        # 떠 있으면 "곧 터질 것 같은" 인상을 주는데, 실제로는 아무 일도 일어나지
+        # 않는다. 켜졌을 때만 0.5 위의 값을 낸다.
+        if not self._on:
+            score = 0.0
         else:
             score = 0.5 + 0.5 * (self.acc - self.fire) / max(self.cap - self.fire, 1e-6)
-        score = min(score, 1.0)
-
-        # 크게 벌린 적이 없으면 판정선을 넘지 못하게 눌러 둔다.
-        # (0 으로 만들지는 않는다. 막대가 차오르는 것은 보이는 편이 낫다.)
-        gated = peak < self.peak_min
-        if gated:
-            score = min(score, 0.49)
+            score = min(max(score, 0.5), 1.0)
 
         return {"score": score, "acc": self.acc, "peak": peak,
-                "fired": score >= 0.5, "peak_gated": gated}
+                "fired": self._on, "peak_gated": gated}
