@@ -2,14 +2,18 @@
 
 **`.keras` 는 저장소에 없다. Release 에서 받아 이 폴더에 넣어야 한다.**
 
-    https://github.com/lcsvvo/Driver-Drowsiness-Detection/releases/tag/weights-260820
+    https://github.com/lcsvvo/Driver-Drowsiness-Detection/releases/tag/weights-260823
 
 받을 파일은 두 개다. 이 폴더(`model/artifacts/`)에 그대로 놓으면 된다.
 
 ```
-eye_mrl+dmd__eval-dmd__gray128.keras
-yawn_face+body__eval-face__gray128.keras
+eye_mrl+dmd__eval-dmd__gray128.keras                       <- weights-260820 과 같은 파일
+yawn_yawn_mouthopen_v2__zoo-cnn_large__eval-face__gray128.keras
 ```
+
+하품 모델은 **입 벌림 게이트와 짝**이다. 노트북이 CNN 앞에서 `open_ratio <= 0.05` 인
+프레임을 끊고 p(yawn)=0 으로 둔다(`src/mouth_gate.py`). 게이트 없이 이 가중치만 쓰면
+입 다문 프레임에서 값이 튄다 - 학습 데이터에 그런 프레임이 아예 없기 때문이다.
 
 `_metrics.json` 은 저장소에 이미 들어 있으니 따로 받을 필요 없다(전체 40KB).
 노트북이 이 파일에서 입력 규격을 읽으므로 짝이 맞아야 하는데, 위 Release 의
@@ -24,12 +28,57 @@ yawn_face+body__eval-face__gray128.keras
 
 ---
 
-## Release 에 들어 있는 가중치 (19MB)
+## Release 에 들어 있는 가중치 (16.7MB)
 
 | 파일 | 무엇 | 성능 | 임계값 |
 |---|---|---|---|
 | `eye_mrl+dmd__eval-dmd__gray128.keras` | 눈 개폐 | Closed-Recall **0.914** / acc 0.962 | 0.93 |
-| `yawn_face+body__eval-face__gray128.keras` | 하품 | Recall **0.807** / acc 0.630 | 0.50 |
+| `yawn_yawn_mouthopen_v2__zoo-cnn_large__eval-face__gray128.keras` | 하품 | 아래 표 참고 | 0.50 + 게이트 0.05 |
+
+### 하품 모델 (weights-260823)
+
+`yawn_mouthopen_v2`(DMD + YawDD, 입 벌린 프레임만 7,919장)로 학습했다.
+
+**게이트를 통과한 프레임만 모은 test 1,553장 @0.50** - 말하기가 섞여 있어 Precision 이
+"말하는 사람을 하품으로 보는가"를 잰다.
+
+| 조건 | acc | Recall | Precision | F1 | params |
+|---|---|---|---|---|---|
+| **`zoo-cnn_large`** | **0.752** | 0.690 | 0.812 | **0.746** | 622,402 |
+| `distill-cnn_small` | 0.697 | 0.603 | 0.773 | 0.678 | 822,018 |
+| `zoo-mbnetv2_035` | 0.625 | 0.727 | 0.624 | 0.671 | 574,434 |
+| `zoo-cnn_small` (KD 없음) | 0.668 | 0.585 | 0.732 | 0.650 | 822,018 |
+
+**distillation 을 했지만 teacher 를 채택했다.** student(`cnn_small`)가 teacher
+(`cnn_large`)보다 모든 지표에서 낮은데 파라미터는 32% 더 많다 - `cnn_small` 은
+Flatten 기반이라서다. 이 조합에서는 압축 이득이 없어 distillation 의 존재 이유가
+성립하지 않는다. 속도도 14.6ms 대 7.1ms 로 둘 다 실시간에 충분하다.
+
+KD 이득(0.678 vs 0.650)도 작다. 같은 설정 재실행에서 `cnn_small` F1 이 0.444~0.650 으로
+흔들려서, 이 데이터로는 distillation 이 도움이 됐다고 말하기 어렵다.
+
+**엔드투엔드 (DMD test face 1,131장, 게이트 포함, 입 다문 프레임까지 전부)** - 프레임
+단위 GT 라 실제 동작에 가장 가깝다.
+
+| | acc | Recall | Precision |
+|---|---|---|---|
+| `yawn_face+body` (weights-260820) | 0.630 | - | - |
+| `distill-cnn_small` (weights-260821) | 0.654 | 0.243 | 0.984 |
+| **`zoo-cnn_large` (weights-260823)** | **0.779** | **0.518** | 0.993 |
+
+라벨별로 쪼개면:
+
+| | Recall | 게이트 통과율 |
+|---|---|---|
+| 손 안 가린 하품 | **0.878** | 95.7% |
+| 손으로 가린 하품 | **0.162** | 21.2% |
+| 오경보 (no_yawn) | 0.003 | 3.1% |
+
+**손으로 가린 하품은 이 구조로 거의 못 잡는다.** 랜드마커가 손 뒤의 입을 "다물었다"고
+재서 게이트가 79% 를 끊는다. 랜드마크 실패 시 통과시키는 fail-open 을 넣어 두었지만
+mediapipe 는 실패하지 않고 닫힘으로 잘못 재기 때문에 여기서는 거의 작동하지 않는다.
+DMD 하품 프레임의 절반이 손가림이라 전체 Recall 이 0.518 에서 멈추는 이유가 이것이다.
+손-입 겹침을 따로 검출하는 경로가 필요하고, 임계값 조정으로는 해결되지 않는다.
 
 둘 다 128x128 그레이스케일 입력, 2-class softmax 출력.
 

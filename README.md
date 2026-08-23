@@ -48,7 +48,7 @@ pip install -r requirements.txt
 │   └── artifacts/                학습된 가중치 + 평가 지표
 │       └── README.md             ← 어떤 가중치가 무엇인지
 ├── src/                          학습 · 데이터셋 생성 코드
-├── scripts/                      DMD 하품 데이터셋 생성 스크립트
+├── scripts/                      데이터셋 생성 스크립트 (DMD · YawDD)
 └── docs/
     └── yawn_model.md             ← 하품 모델의 성능과 한계
 ```
@@ -107,6 +107,103 @@ python src/train_eye.py --train mrl dmd --eval dmd
 
 데이터셋 자체를 다시 만들려면 DMD 원본 영상과 어노테이션이 필요하다
 (`scripts/build_dmd_yawn_dataset.py`, `src/build_dmd_eye_dataset.py`).
+
+### YawDD (하품 데이터 추가분)
+
+DMD 하품 데이터가 16세션뿐이라 YawDD(운전 중 하품 영상 349개)를 붙였다. 원본
+`data/user06.tar` 에서 시작해 두 단계로 만든다.
+
+```bash
+python scripts/prepare_yawdd.py             # 압축 해제 결과 정규화 + 검증 -> raw/YawDD/
+python scripts/build_yawdd_yawn_dataset.py --all   # 얼굴 crop + manifest -> processed_yawdd/
+python scripts/build_yawn_mouthopen_dataset.py --measure --build   # 입 벌린 것만 -> yawn_mouthopen_v2/
+```
+
+**YawDD 의 라벨은 영상 단위다.** `Yawning` 영상에 하품이 들어 있다는 뜻이지 그 영상의
+모든 프레임이 하품이라는 뜻이 아니다. 반면 `Normal`·`Talking` 영상은 모든 프레임이
+하품이 아닌 것이 확실하다(`Talking` 은 "입은 열리는데 하품은 아닌" 표본이라 오경보를
+줄이는 데 특히 값이 있다). 그래서 manifest 에 `label_quality`(strong/weak)를 함께
+적었다. **약한 라벨을 거르지 않고 그대로 학습하면 안 된다** —
+`Dataset/processed_yawdd/README.md` §3 을 먼저 읽을 것.
+
+학습은 `--manifest` 로 다른 manifest 를 지정해 돌린다(기본값은 DMD 그대로다).
+
+```bash
+python src/train_yawn.py --train face \
+    --manifest ../Dataset/processed_yawdd/metadata/manifest.csv
+```
+
+### 입 벌린 negative (`yawn_mouthopen_v2`)
+
+하품 모델의 오경보가 많은 이유는 negative 가 대부분 **입을 다물고** 있어서다. 모델이
+하품이 아니라 "입이 벌어졌는가"를 배우고, 말하는 운전자에게 그대로 경보를 울린다.
+
+`build_yawn_mouthopen_dataset.py` 는 mediapipe 랜드마커로 입 벌림(`open_ratio`)을 재서
+**두 클래스 양쪽에서** 입 다문 프레임을 뺀다. DMD 와 YawDD 를 함께 쓴다.
+
+```bash
+python scripts/build_yawn_mouthopen_dataset.py --measure --sources dmd yawdd
+python scripts/build_yawn_mouthopen_dataset.py --stats     # 임계값 고르기
+python scripts/build_yawn_mouthopen_dataset.py --build     # -> yawn_mouthopen_v2/
+```
+
+임계값 0.05 로 7,919장(no_yawn 4,103 / yawn 3,816), 피험자 81명. 이미지는 하드링크라
+용량이 늘지 않는다.
+
+**두 출처의 역할이 정반대다.** DMD 의 `no_yawn` 은 정상 주행이라 거의 다 입을 다물고
+있어서(임계값을 넘는 것이 5%) 합본에서 DMD 는 사실상 positive 공급원이다 - 대신
+프레임 단위 GT 라 라벨이 정확하다. "입은 벌렸는데 하품이 아닌" negative 는 89% 가
+YawDD 의 `talking` 에서 온다. 한쪽만으로는 이 데이터셋이 성립하지 않는다.
+
+`yawn_with_hand`(손이 입을 가려 벌림을 잴 수 없다)와 `talking_yawning`(한 영상에
+말하기와 하품이 섞여 프레임 라벨 불가)은 제외한다.
+
+```bash
+python src/train_yawn_zoo.py --arch cnn_large \
+    --manifest ../Dataset/yawn_mouthopen_v2/metadata/manifest.csv
+```
+
+임계값을 바꾸거나(`--threshold`), 두 클래스의 입 벌림 분포를 아예 같게 맞춰
+"입 벌린 정도"라는 지름길을 막는(`--match-openness`) 것도 된다. 측정값은 CSV 로 남아서
+다시 자를 때는 몇 초면 끝난다. 옛 YawDD 전용 데이터셋은
+`--sources yawdd --threshold 0.10 --out yawn_mouthopen` 으로 그대로 재현된다.
+
+### 추론에도 같은 문을 단다 (`src/mouth_gate.py`)
+
+데이터셋을 이렇게 만들었으면 **추론도 같은 조건이어야 한다.** 입 다문 프레임은 CNN 이
+본 적 없는 입력이라 넣으면 값이 튄다. `02_INFER_YuNet.ipynb` 는 CNN 앞에 게이트를 둔다.
+
+```
+open_ratio <= 0.05  ->  CNN 을 부르지 않고 p(yawn) = 0
+open_ratio >  0.05  ->  CNN 에 물어본다
+```
+
+측정 함수는 `src/mouth_gate.py` 한 곳에만 있고 데이터셋 빌더가 그것을 import 한다.
+두 곳에 따로 두면 값이 조용히 갈라지기 때문이다. 노트북은 실행할 때 게이트 임계값과
+가중치를 만든 데이터셋의 임계값이 같은지 확인하고, 다르면 경고한다.
+
+**임계값이 곧 Recall 상한이다.** 게이트에 걸린 하품은 모델이 아무리 좋아도 못 잡는다.
+DMD 하품 프레임(n=1,148, 프레임 단위 GT) 기준:
+
+| 게이트 | 하품인데 걸리는 비율 | Recall 상한 |
+|---|---|---|
+| 0.03 | 7.8% | 0.922 |
+| **0.05** | **10.5%** | **0.895** |
+| 0.08 | 14.4% | 0.856 |
+| 0.10 | 18.3% | 0.817 |
+
+게이트는 실시간 루프(`run_realtime_scores`)에도 들어 있다. 그 루프는 속도 때문에
+`yawn_detection()` 을 거치지 않고 모델을 직접 부르므로, 게이트를 양쪽에 두지 않으면
+낱장 추론에서만 걸리고 실시간에서는 빠진다.
+
+`--measure` 에는 mediapipe 랜드마커 모델이 필요하다. `.gitignore` 가 `*.task` 를
+막으므로(3.7MB) 각자 받아 `model/detectors/face_landmarker.task` 에 둔다. 측정은 한 번만
+하면 되고, 결과 CSV 가 남아서 다시 자를 때는 모델이 없어도 된다.
+
+```bash
+curl -L -o model/detectors/face_landmarker.task \
+  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+```
 
 ## 5. 평가에서 지킨 것
 
