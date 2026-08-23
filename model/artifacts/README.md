@@ -11,6 +11,34 @@ eye_mrl+dmd__eval-dmd__gray128.keras                       <- weights-260820 과
 yawn_yawn_mouthopen_v2__zoo-cnn_large__eval-face__gray128.keras
 ```
 
+### 받는 법
+
+```bash
+# 저장소 루트에서
+gh release download weights-260823 -R lcsvvo/Driver-Drowsiness-Detection -D model/artifacts
+```
+
+`gh` 가 없으면 위 Release 페이지의 Assets 에서 직접 받아 이 폴더에 넣는다.
+
+랜드마커 모델도 필요하다. `.gitignore` 가 `*.task` 를 막으므로(3.7MB) 각자 받는다.
+
+```bash
+curl -L -o model/detectors/face_landmarker.task   https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+```
+
+제대로 놓였는지는 `02_INFER_YuNet.ipynb` 의 cell 4 가 알려준다.
+
+```
+[o] Yawn CNN  yawn_yawn_mouthopen_v2__zoo-cnn_large__eval-face__gray128.keras    7.21 MB
+입 벌림 게이트: open_ratio > 0.05 일 때만 CNN 호출  (hold 3 프레임)
+  학습 데이터셋과 같은 임계값입니다
+```
+
+마지막 줄이 핵심이다. 게이트 임계값과 가중치를 만든 데이터셋의 임계값이 어긋나면
+그 자리에서 경고가 뜬다.
+
+---
+
 하품 모델은 **입 벌림 게이트와 짝**이다. 노트북이 CNN 앞에서 `open_ratio <= 0.05` 인
 프레임을 끊고 p(yawn)=0 으로 둔다(`src/mouth_gate.py`). 게이트 없이 이 가중치만 쓰면
 입 다문 프레임에서 값이 튄다 - 학습 데이터에 그런 프레임이 아예 없기 때문이다.
