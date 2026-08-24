@@ -1,43 +1,25 @@
-"""입 벌림 게이트 — 학습 데이터 필터와 실시간 추론이 **같은 자**를 쓰게 하는 단일 출처.
+"""입 벌림 게이트 — 학습 데이터 필터와 실시간 추론이 같은 기준을 사용한다.
 
-하품 모델은 "입은 벌어졌다, 이게 하품인가 말하기인가"만 푼다. 입을 다물었는지는
-CNN 이 아니라 랜드마크로 먼저 가른다.
+하품 모델은 "입은 벌어졌다, 이게 하품인가 말하기인가"를 판별한다.
+입을 다물었는지는 CNN이 아니라 랜드마크 기반 게이트에서 먼저 판단한다.
 
-    open_ratio <= threshold   ->  하품 아님. CNN 을 부르지 않고 p(yawn)=0
-    open_ratio >  threshold   ->  CNN 에 물어본다
+    open_ratio <= threshold
+        -> 하품 아님
+        -> CNN을 호출하지 않고 p(yawn)=0
 
-이렇게 나누는 이유는 두 가지다.
+    open_ratio > threshold
+        -> Yawn CNN으로 전달
 
-1. **학습과 조건을 맞춘다.** 데이터셋(`scripts/build_yawn_mouthopen_dataset.py`)이
-   두 클래스 모두에서 입 다문 프레임을 빼고 만들어졌다. 그 모델에 입 다문 프레임을
-   넣으면 학습에서 본 적 없는 입력이라 출력이 아무 의미가 없다.
-2. **가장 흔한 오경보를 원천에서 막는다.** 입을 다물고 있는데 하품으로 뜨는 경우가
-   사라진다. 그리고 다문 프레임에서는 CNN 을 건너뛰므로 그만큼 빨라진다.
-
-대가: 게이트에 걸린 하품은 모델이 아무리 좋아도 못 잡는다. **임계값이 곧 Recall
-상한이다.** DMD 하품 프레임(n=1,148, 프레임 단위 GT)으로 잰 값:
-
-    게이트   하품인데 걸리는 비율   Recall 상한
-    0.03            7.8%              0.922
-    0.05           10.5%              0.895
-    0.08           14.4%              0.856
-    0.10           18.3%              0.817
-
-**데이터셋을 만든 임계값과 추론 게이트의 임계값은 같아야 한다.** 다르면 학습에서
-본 적 없는 구간이 추론에 들어오거나(게이트가 더 낮을 때), 학습 데이터의 일부가
-추론에서 영영 안 쓰인다(더 높을 때).
+학습 데이터셋과 실시간 추론에서 반드시 같은 threshold를 사용해야 한다.
 
 지표
     gap = 안쪽 입술 위(13) - 아래(14) 거리
-    eye = 눈 바깥 끝(33) - (263) 거리          <- 얼굴 크기 기준자
+    eye = 눈 바깥 끝(33) - (263) 거리
     open_ratio = gap / eye
 
-`eye` 로 나누므로 얼굴이 크게 찍혔든 작게 찍혔든 같은 값이 나온다. 입 너비로 나누는
-고전적 MAR 은 하품할 때 입 너비 자체가 변해서 기준자로 삼기에 불안정하다.
-
-**얼굴 crop 에 대고 잰다.** 프레임 전체가 아니다. 학습 데이터의 측정도 crop 에
-대고 했고, crop 쪽이 얼굴이 크게 잡혀 랜드마크가 안정적이다.
+얼굴 크기의 영향을 줄이기 위해 입 벌림 거리를 눈 사이 거리로 정규화한다.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,124 +27,432 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-# =====================================================================
-# 상수 — 데이터셋 빌더와 추론이 공유한다
-# =====================================================================
-#: 랜드마크 번호 (mediapipe FaceLandmarker 478점 기준)
-IDX_LIP_UPPER_IN, IDX_LIP_LOWER_IN = 13, 14
-IDX_LIP_UPPER_OUT, IDX_LIP_LOWER_OUT = 0, 17
-IDX_MOUTH_L, IDX_MOUTH_R = 61, 291
-IDX_EYE_L, IDX_EYE_R = 33, 263
 
-#: 랜드마크를 잴 때 이 크기로 줄인다. crop 은 353~579px 인데 랜드마크 정확도는
-#: 256px 면 충분하고, 줄이면 측정이 2배 이상 빨라진다.
+# =====================================================================
+# 상수
+# =====================================================================
+
+# MediaPipe FaceLandmarker 478점 기준
+IDX_LIP_UPPER_IN = 13
+IDX_LIP_LOWER_IN = 14
+
+IDX_LIP_UPPER_OUT = 0
+IDX_LIP_LOWER_OUT = 17
+
+IDX_MOUTH_L = 61
+IDX_MOUTH_R = 291
+
+IDX_EYE_L = 33
+IDX_EYE_R = 263
+
+
+# 랜드마크 측정 시 최대 이미지 크기
 MEASURE_SIZE = 256
 
-#: 기본 임계값. 데이터셋 빌더의 DEFAULT_THRESHOLD 와 같은 값이어야 한다.
+
+# 데이터셋 생성 시 사용한 임계값과 동일해야 한다.
 DEFAULT_THRESHOLD = 0.05
 
-#: 랜드마커 모델의 관례 위치 (YuNet 과 같은 자리).
-#: 받는 곳: https://storage.googleapis.com/mediapipe-models/face_landmarker/
-#:         face_landmarker/float16/1/face_landmarker.task
-DEFAULT_MODEL = Path(__file__).resolve().parent.parent / "model" / "detectors" / "face_landmarker.task"
 
+# FaceLandmarker 모델 기본 위치
+DEFAULT_MODEL = (
+    Path(__file__).resolve().parent.parent
+    / "model"
+    / "detectors"
+    / "face_landmarker.task"
+)
+
+
+# =====================================================================
+# MouthMeter
+# =====================================================================
 
 class MouthMeter:
-    """crop 한 장 -> 입 벌림 지표. 얼굴/랜드마크를 못 찾으면 None.
+    """얼굴 crop 한 장에서 입 벌림 정도를 측정한다.
 
-    데이터셋 빌더가 쓰는 클래스다. 실시간에는 아래 MouthGate 를 쓴다.
+    반환값:
+        {
+            "open_ratio": ...,
+            "mar": ...,
+            "lip_ratio": ...,
+            "mouth_w_over_eye": ...
+        }
+
+    얼굴 또는 랜드마크를 찾지 못하면 None을 반환한다.
     """
 
-    def __init__(self, model: Path | str | None = None):
-        # import 를 여기서 하는 이유: 이 모듈을 import 만 하고 측정을 안 하는
-        # 경로(예: 상수만 쓰는 곳)에서 mediapipe 를 요구하지 않기 위해서다.
+    def __init__(
+        self,
+        model: Path | str | None = None
+    ):
+
+        # 이 모듈을 import만 하는 경우에는 mediapipe가 필요하지 않도록
+        # 실제 MouthMeter 객체가 생성될 때 import한다.
         import mediapipe as mp
+
         from mediapipe.tasks import python as mpp
         from mediapipe.tasks.python import vision
 
         model = Path(model) if model else DEFAULT_MODEL
+
         if not model.exists():
+
             raise SystemExit(
                 f"랜드마커 모델이 없습니다: {model}\n"
-                "받는 곳: https://storage.googleapis.com/mediapipe-models/"
-                "face_landmarker/face_landmarker/float16/1/face_landmarker.task")
+                "받는 곳: "
+                "https://storage.googleapis.com/mediapipe-models/"
+                "face_landmarker/face_landmarker/float16/1/"
+                "face_landmarker.task"
+            )
+
         self._mp = mp
+
+        # MediaPipe FaceLandmarker 생성
         self.lmk = vision.FaceLandmarker.create_from_options(
+
             vision.FaceLandmarkerOptions(
-                base_options=mpp.BaseOptions(model_asset_path=str(model)),
-                num_faces=1, running_mode=vision.RunningMode.IMAGE))
+
+                base_options=mpp.BaseOptions(
+                    model_asset_path=str(model)
+                ),
+
+                num_faces=1,
+
+                running_mode=vision.RunningMode.IMAGE,
+            )
+        )
+
 
     def measure(self, img) -> dict | None:
+        """얼굴 crop에서 입 벌림 지표를 계산한다."""
+
+        # -------------------------------------------------------------
+        # 잘못된 입력 방어
+        # -------------------------------------------------------------
+
+        if img is None:
+            return None
+
+        if img.size == 0:
+            return None
+
+
+        # -------------------------------------------------------------
+        # 이미지 크기 축소
+        # -------------------------------------------------------------
+
         h, w = img.shape[:2]
+
         if max(h, w) > MEASURE_SIZE:
-            s = MEASURE_SIZE / max(h, w)
-            img = cv2.resize(img, (int(round(w * s)), int(round(h * s))),
-                             interpolation=cv2.INTER_AREA)
+
+            scale = MEASURE_SIZE / max(h, w)
+
+            new_w = int(round(w * scale))
+            new_h = int(round(h * scale))
+
+            img = cv2.resize(
+                img,
+                (new_w, new_h),
+                interpolation=cv2.INTER_AREA
+            )
+
             h, w = img.shape[:2]
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        out = self.lmk.detect(
-            self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb))
+
+
+        # -------------------------------------------------------------
+        # BGR -> RGB
+        # -------------------------------------------------------------
+
+        rgb = cv2.cvtColor(
+            img,
+            cv2.COLOR_BGR2RGB
+        )
+
+
+        # -------------------------------------------------------------
+        # MediaPipe FaceLandmarker
+        # -------------------------------------------------------------
+
+        mp_image = self._mp.Image(
+            image_format=self._mp.ImageFormat.SRGB,
+            data=rgb
+        )
+
+        out = self.lmk.detect(mp_image)
+
+
+        # 얼굴 랜드마크를 찾지 못한 경우
         if not out.face_landmarks:
             return None
-        p = np.array([[l.x * w, l.y * h] for l in out.face_landmarks[0]])
-        gap = float(np.linalg.norm(p[IDX_LIP_UPPER_IN] - p[IDX_LIP_LOWER_IN]))
-        lip = float(np.linalg.norm(p[IDX_LIP_UPPER_OUT] - p[IDX_LIP_LOWER_OUT]))
-        mouth_w = float(np.linalg.norm(p[IDX_MOUTH_L] - p[IDX_MOUTH_R]))
-        eye = float(np.linalg.norm(p[IDX_EYE_L] - p[IDX_EYE_R]))
-        if eye <= 0 or mouth_w <= 0:
+
+
+        # -------------------------------------------------------------
+        # 랜드마크 좌표
+        # -------------------------------------------------------------
+
+        landmarks = out.face_landmarks[0]
+
+        p = np.array(
+            [
+                [
+                    landmark.x * w,
+                    landmark.y * h
+                ]
+                for landmark in landmarks
+            ],
+            dtype=np.float32
+        )
+
+
+        # -------------------------------------------------------------
+        # 입 벌림 거리
+        # -------------------------------------------------------------
+
+        # 안쪽 입술 위-아래 거리
+        gap = float(
+            np.linalg.norm(
+                p[IDX_LIP_UPPER_IN]
+                - p[IDX_LIP_LOWER_IN]
+            )
+        )
+
+
+        # 바깥쪽 입술 위-아래 거리
+        lip = float(
+            np.linalg.norm(
+                p[IDX_LIP_UPPER_OUT]
+                - p[IDX_LIP_LOWER_OUT]
+            )
+        )
+
+
+        # 입 좌우 너비
+        mouth_w = float(
+            np.linalg.norm(
+                p[IDX_MOUTH_L]
+                - p[IDX_MOUTH_R]
+            )
+        )
+
+
+        # 눈 바깥쪽 사이 거리
+        eye = float(
+            np.linalg.norm(
+                p[IDX_EYE_L]
+                - p[IDX_EYE_R]
+            )
+        )
+
+
+        # -------------------------------------------------------------
+        # 잘못된 거리 방어
+        # -------------------------------------------------------------
+
+        if eye <= 0:
             return None
+
+        if mouth_w <= 0:
+            return None
+
+
+        # -------------------------------------------------------------
+        # 지표 계산
+        # -------------------------------------------------------------
+
+        open_ratio = gap / eye
+
+        mar = gap / mouth_w
+
+        lip_ratio = lip / eye
+
+        mouth_w_over_eye = mouth_w / eye
+
+
         return {
-            "open_ratio": round(gap / eye, 5),        # 주 지표
-            "mar": round(gap / mouth_w, 5),           # 고전적 MAR (참고용)
-            "lip_ratio": round(lip / eye, 5),         # 바깥 입술 두께 포함
-            "mouth_w_over_eye": round(mouth_w / eye, 5),
+
+            # 실제 게이트에서 사용하는 주 지표
+            "open_ratio": round(
+                open_ratio,
+                5
+            ),
+
+            # 고전적 MAR — 참고용
+            "mar": round(
+                mar,
+                5
+            ),
+
+            # 바깥 입술 두께 포함
+            "lip_ratio": round(
+                lip_ratio,
+                5
+            ),
+
+            # 입 너비 / 눈 거리
+            "mouth_w_over_eye": round(
+                mouth_w_over_eye,
+                5
+            ),
         }
 
 
+# =====================================================================
+# MouthGate
+# =====================================================================
+
 class MouthGate:
-    """실시간용 게이트. 얼굴 crop 을 받아 "CNN 을 부를지" 를 답한다.
+    """실시간 Yawn CNN 앞에서 입 벌림 여부를 판단한다.
 
-    MouthMeter 와 같은 계산을 쓰되, 실시간에서 필요한 두 가지가 더 있다.
+    check(crop)의 반환값:
 
-    - **랜드마크 실패를 열어 둔다(fail-open).** 고개를 돌리거나 손으로 가려서
-      랜드마크가 안 잡히는 순간이 있다. 그때 게이트를 닫으면(=하품 아님) 손으로
-      입을 가린 하품이 통째로 사라진다 - 하품에서 가장 흔한 자세다. 그래서 못
-      쟀을 때는 CNN 에게 넘긴다. 대신 open_ratio 는 None 으로 보고한다.
-    - **시간축으로 눌러 준다.** 프레임 단위 랜드마크는 흔들려서 임계값 근처에서
-      게이트가 깜빡인다. 최근 몇 프레임의 최댓값을 쓰면(hold) 하품이 시작되는
-      순간을 놓치지 않으면서 깜빡임이 없어진다.
+        (gate_open, open_ratio)
+
+    gate_open == False
+        -> 입을 다문 상태
+        -> Yawn CNN 호출하지 않음
+
+    gate_open == True
+        -> 입이 충분히 벌어진 상태
+        -> Yawn CNN 호출
+
+    랜드마크 측정에 실패한 경우에는 fail-open 방식으로 True를 반환한다.
+    즉, 측정 실패 때문에 실제 하품을 놓치는 것을 방지하기 위해 CNN으로 넘긴다.
+
+    hold는 최근 N개의 open_ratio 중 최댓값을 사용한다.
+    임계값 주변에서 게이트가 프레임마다 열렸다 닫혔다 하는 현상을 줄인다.
     """
 
-    def __init__(self, model=None, threshold: float = DEFAULT_THRESHOLD,
-                 hold: int = 3):
+    def __init__(
+        self,
+        model=None,
+        threshold: float = DEFAULT_THRESHOLD,
+        hold: int = 3
+    ):
+
         self.meter = MouthMeter(model)
-        self.threshold = float(threshold)
-        self.hold = max(int(hold), 1)
+
+        self.threshold = float(
+            threshold
+        )
+
+        self.hold = max(
+            int(hold),
+            1
+        )
+
         self._recent: list[float] = []
 
+
+    # -----------------------------------------------------------------
+    # 게이트 상태 초기화
+    # -----------------------------------------------------------------
+
     def reset(self) -> None:
+        """최근 open_ratio 기록을 초기화한다."""
+
         self._recent.clear()
 
-    def measure(self, crop) -> float | None:
-        """얼굴 crop -> open_ratio. 못 재면 None."""
-        if crop is None or crop.size == 0:
-            return None
-        m = self.meter.measure(crop)
-        return None if m is None else float(m["open_ratio"])
 
-    def check(self, crop) -> tuple[bool, float | None]:
-        """(CNN 을 부를까?, open_ratio) 를 답한다.
+    # -----------------------------------------------------------------
+    # open_ratio 측정
+    # -----------------------------------------------------------------
 
-        open_ratio 가 None 이면 못 잰 것이고, 그때는 True(=CNN 에 넘김)를 돌린다.
+    def measure(
+        self,
+        crop
+    ) -> float | None:
+        """얼굴 crop에서 open_ratio를 측정한다.
+
+        측정할 수 없는 경우 None을 반환한다.
         """
-        r = self.measure(crop)
+
+        if crop is None:
+            return None
+
+        if crop.size == 0:
+            return None
+
+
+        result = self.meter.measure(
+            crop
+        )
+
+
+        if result is None:
+            return None
+
+
+        return float(
+            result["open_ratio"]
+        )
+
+
+    # -----------------------------------------------------------------
+    # 게이트 판정
+    # -----------------------------------------------------------------
+
+    def check(
+        self,
+        crop
+    ) -> tuple[bool, float | None]:
+        """Yawn CNN을 호출할지 결정한다.
+
+        반환:
+            (gate_open, open_ratio)
+
+        gate_open:
+            True  -> Yawn CNN 실행
+            False -> Yawn CNN 실행하지 않음
+
+        open_ratio:
+            측정 성공 -> float
+            측정 실패 -> None
+        """
+
+        r = self.measure(
+            crop
+        )
+
+
+        # -------------------------------------------------------------
+        # 랜드마크 측정 실패
+        # -------------------------------------------------------------
+        #
+        # fail-open:
+        #
+        # 측정 실패를 "입 다물음"으로 간주하면
+        # 얼굴 각도/가림 때문에 실제 하품을 놓칠 수 있다.
+        #
+        # 따라서 CNN으로 그대로 넘긴다.
+        # -------------------------------------------------------------
+
         if r is None:
-            # 못 쟀다. hold 창을 건드리지 않고 그대로 통과시킨다 - 실패한 프레임이
-            # 창에 0 으로 들어가 다음 몇 프레임까지 게이트를 닫아 버리면 안 된다.
             return True, None
 
-        self._recent.append(r)
-        if len(self._recent) > self.hold:
-            del self._recent[:-self.hold]
 
-        return max(self._recent) > self.threshold, r
+        # -------------------------------------------------------------
+        # 최근 open_ratio 기록
+        # -------------------------------------------------------------
+
+        self._recent.append(r)
+
+
+        # hold 개수만 유지
+        if len(self._recent) > self.hold:
+
+            self._recent = (
+                self._recent[-self.hold:]
+            )
+
+
+        # -------------------------------------------------------------
+        # 게이트 판정
+        # -------------------------------------------------------------
+
+        gate_open = (
+            max(self._recent)
+            > self.threshold
+        )
+
+
+        return gate_open, r
