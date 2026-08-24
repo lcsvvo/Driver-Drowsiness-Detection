@@ -1,267 +1,447 @@
-# 운전자 졸음 감지 — 추론 · 학습
+# Driver Drowsiness Detection - 260824 수정사항
 
-YuNet 얼굴 검출 + 직접 학습한 눈 개폐 CNN / 하품 CNN. 웹캠으로 실시간 판정하고,
-PERCLOS(최근 1분 중 눈 감긴 시간 비율)를 함께 낸다.
+## 1. 수정 개요
 
-**데이터셋 이미지는 이 저장소에 없다.** 추론은 데이터셋 없이 돌고, 학습만 별도로
-데이터를 받아야 한다 (§4).
+실시간 웹캠 기반 운전자 졸음 감지 과정에서 하품 감지가 정상적으로 이루어지지 않는 문제를 확인하고 수정하였다.
+
+기존에는 하품 CNN 자체에서 높은 하품 확률이 출력되고 있었지만, 입 벌림 정도를 측정하는 `MouthGate`가 비활성화되어 `open_ratio`가 `None`으로 전달되고 있었다. 이로 인해 시간축 기반 하품 누적 판정이 정상적으로 이루어지지 않았다.
+
+또한 실시간 측정 종료 후 운전자의 졸음 상태를 확인할 수 있도록 눈 감김, PERCLOS, 하품, 졸음 경고 등의 세션 통계와 종합 결과를 출력하는 `DRIVER MONITORING REPORT`를 추가하였다.
+
 
 ---
 
-## 1. 5분 안에 돌려보기
+## 2. 하품 감지 문제
+
+### 기존 문제
+
+실시간 웹캠 테스트에서 실제로 하품을 수행하면 Yawn CNN의 출력 확률은 정상적으로 높아졌다.
+
+예를 들어 다음과 같이 `raw_p`가 0.9 이상까지 상승하는 것을 확인하였다.
+
+```text
+raw_p=0.983
+raw_p=0.978
+raw_p=0.991
+raw_p=0.994
+```
+
+하지만 동시에 다음과 같은 상태가 확인되었다.
+
+```text
+detector.gate = None
+open_ratio = None
+```
+
+즉, **Yawn CNN은 하품 가능성을 높게 예측하고 있었지만 입 벌림 정도가 측정되지 않고 있었다.**
+
+하품의 최종 판정에는 CNN의 하품 확률뿐만 아니라 입 벌림 정도와 시간축 누적값이 사용되기 때문에 `open_ratio=None` 상태에서는 의도한 하품 누적 판정이 정상적으로 이루어질 수 없었다.
+
+
+---
+
+## 3. 원인 확인
+
+설정을 확인한 결과 다음과 같은 상태였다.
+
+```python
+YAWN_USE_GATE = True
+
+YAWN_GATE = {
+    "enabled": False,
+    "threshold": 0.05,
+    "landmarker": ".../face_landmarker.task",
+    "hold": 3,
+}
+```
+
+전체 설정에서는 `YAWN_USE_GATE=True`였지만 실제 게이트 설정의 `enabled` 값은 `False`였다.
+
+따라서 `Drowsiness_Detector` 초기화 과정에서 `MouthGate` 객체가 생성되지 않았다.
+
+```python
+if YAWN_USE_GATE and self.gate_spec and self.gate_spec.get("enabled"):
+    self.gate = MouthGate(...)
+```
+
+결과적으로:
+
+```text
+detector.gate = None
+```
+
+상태가 되어 입 벌림 정도를 측정하지 못하고 있었다.
+
+
+---
+
+## 4. MouthGate 활성화
+
+입 벌림 정도를 실제로 측정할 수 있도록 게이트를 활성화하였다.
+
+```python
+YAWN_USE_GATE = True
+
+YAWN_GATE = {
+    "enabled": True,
+    "threshold": 0.05,
+    "landmarker": ".../face_landmarker.task",
+    "hold": 3,
+}
+```
+
+수정 후 다음과 같이 `MouthGate` 객체가 정상적으로 생성되는 것을 확인하였다.
+
+```text
+YAWN_USE_GATE = True
+YAWN_GATE = {'enabled': True, 'threshold': 0.05, ...}
+detector.gate = <mouth_gate.MouthGate object ...>
+```
+
+
+---
+
+## 5. MediaPipe FaceLandmarker 적용
+
+`MouthGate`에서는 MediaPipe FaceLandmarker를 이용해 얼굴 랜드마크를 검출하고 입 벌림 정도를 계산한다.
+
+사용하는 주요 랜드마크는 다음과 같다.
+
+| 위치 | Landmark Index |
+|---|---:|
+| 위쪽 안쪽 입술 | 13 |
+| 아래쪽 안쪽 입술 | 14 |
+| 왼쪽 눈 바깥점 | 33 |
+| 오른쪽 눈 바깥점 | 263 |
+| 입 왼쪽 | 61 |
+| 입 오른쪽 | 291 |
+
+입 벌림 정도인 `open_ratio`는 다음 기준으로 계산한다.
+
+```text
+gap = distance(upper_inner_lip, lower_inner_lip)
+eye = distance(left_outer_eye, right_outer_eye)
+
+open_ratio = gap / eye
+```
+
+단순한 입술 사이의 픽셀 거리를 사용하는 대신 눈 사이 거리로 정규화하여 얼굴이 카메라에서 가까워지거나 멀어지는 것에 따른 영향을 줄인다.
+
+
+---
+
+## 6. MediaPipe 의존성 문제 해결
+
+MouthGate를 활성화한 이후 다음 오류가 발생하였다.
+
+```text
+ModuleNotFoundError: No module named 'mediapipe'
+```
+
+기존에는 MouthGate 자체가 비활성화되어 있었기 때문에 MediaPipe 코드가 실제로 실행되지 않아 해당 문제가 나타나지 않았다.
+
+가상환경에 MediaPipe를 설치하여 해결하였다.
 
 ```bash
-pip install -r requirements.txt
+python -m pip install mediapipe
 ```
 
-**가중치를 받아야 한다.** 저장소에는 코드와 평가 지표만 있고 `.keras` 는 Release 로 뺐다.
+설치 과정에서 OpenCV의 `cv2.pyd`가 Jupyter/VS Code에서 사용 중이어서 다음 오류가 발생하기도 하였다.
 
-    https://github.com/lcsvvo/Driver-Drowsiness-Detection/releases/tag/weights-260820
-
-받은 `.keras` 두 개를 `model/artifacts/` 에 넣는다. 자세한 건
-[`model/artifacts/README.md`](model/artifacts/README.md).
-
-그 다음 `model/02_INFER_YuNet.ipynb` 을 열고 **1~4번 섹션(셀 6개)** 을 실행하면 추론 준비가 끝난다.
-
-| 섹션 | 내용 | |
-|---|---|---|
-| 1~4 | 환경 점검 · 가중치 로딩 · detector 정의 | **필수** |
-| 5 | 이미지 파일로 테스트 | 데이터가 있을 때만 |
-| 6 | 카메라 점검 | 웹캠 쓸 때 |
-| 7 | 사진 한 장 촬영 후 판정 | 수동 실행 |
-| 8 | **실시간 점수 모니터** | 수동 실행 |
-
-> 7·8번은 카메라를 열고 대기하므로 `Run All` 에 맞지 않는다. 6번까지 Run All 한 뒤
-> 7·8은 직접 실행한다.
-
-가장 흔한 실패는 **OpenCV 버전**이다. `cv2.FaceDetectorYN` 이 4.5.4 에서 들어와서,
-그보다 낮으면 두 번째 셀에서 바로 멈춘다.
-
-## 2. 폴더 구조
-
-```
-├── config.py                     공통 경로. 코드에 절대경로를 쓰지 않는다
-├── requirements.txt
-├── model/
-│   ├── 02_INFER_YuNet.ipynb      ← 추론은 전부 여기
-│   ├── detectors/                YuNet onnx (사전학습, 227KB)
-│   └── artifacts/                학습된 가중치 + 평가 지표
-│       └── README.md             ← 어떤 가중치가 무엇인지
-├── src/                          학습 · 데이터셋 생성 코드
-├── scripts/                      데이터셋 생성 스크립트 (DMD · YawDD)
-└── docs/
-    └── yawn_model.md             ← 하품 모델의 성능과 한계
+```text
+[WinError 5] 액세스가 거부되었습니다:
+.venv\Lib\site-packages\cv2\cv2.pyd
 ```
 
-## 3. 두 모델
+실행 중인 Jupyter 커널 및 Python 프로세스를 종료한 후 가상환경에서 다시 설치하여 해결하였다.
 
-| | 입력 | 출력 | 임계값 |
-|---|---|---|---|
-| 눈 개폐 | 눈 crop 128x128 gray | `class 0 = Closed` | 0.93 |
-| 하품 | 얼굴 crop 128x128 gray | `class 0 = yawn` | 0.50 |
+설치 후 MediaPipe와 OpenCV가 정상적으로 import되는 것을 확인하였다.
 
-둘 다 `class 0` 이 "위험한 쪽"이다. 순서를 뒤집으면 에러 없이 조용히 반대로 동작한다.
 
-학습과 추론이 **같은 전처리 함수**(`src/eye_preprocess.py` 의 `preprocess_eye`)를
-통과한다. 리사이즈나 채널 변환을 추론 쪽에서 따로 손으로 하면 입력 분포가 어긋나
-성능만 조용히 떨어지므로, 새 모델을 붙일 때도 이 경로를 지킬 것.
+---
 
-crop 규격은 손으로 적지 않고 `_metrics.json` 에서 읽는다. 가중치 파일만 바꾸면
-입력 규격도 따라온다.
+## 7. MouthGate 동작 확인
 
-### 하품 모델은 아직 실사용 수준이 아니다
+디버깅을 통해 FaceLandmarker가 정상적으로 얼굴 랜드마크를 검출하고 `open_ratio`를 계산하는 것을 확인하였다.
 
-실제 하품 비율로 환산한 Precision 이 **0.203** 이다 — 경보 5번 중 4번이 오경보다.
-test 피험자 4명에서 정확도가 0.333 ~ 0.864 로 널뛰기도 한다.
-**경보를 켜기 전에 `docs/yawn_model.md` 를 읽을 것.**
+입을 다물고 있는 상태에서는 `open_ratio`가 매우 낮게 나타났으며:
 
-눈 모델은 Closed-Recall 0.914 / 정확도 0.962 로 쓸 만하다.
-
-## 4. 다시 학습하려면
-
-데이터셋 이미지가 필요하다. 팀 공용 드라이브에서 받아 `Dataset/` 을 이 폴더의
-**형제 위치**에 두면 스크립트가 알아서 찾는다. 다른 곳에 두었으면 `--dataset-root` 로 준다.
-
-```
-miniProject1/
-├── Dataset/                       ← 여기
-└── Drowsiness-Detection_260820/   ← 이 폴더
+```text
+open_ratio ≈ 0.003
+open_ratio ≈ 0.01
+open_ratio ≈ 0.03
 ```
 
-```bash
-# 하품 — 학습 소스(뷰)만 바꿔 A/B/C 비교
-python src/train_yawn.py --train face
-python src/train_yawn.py --train body
-python src/train_yawn.py --train face body
+입을 크게 벌릴수록 다음과 같이 값이 증가하였다.
 
-# 눈 — 학습 소스만 바꿔 A/B/C/C' 비교
-python src/train_eye.py --train mrl --eval dmd
-python src/train_eye.py --train mrl dmd --eval dmd
+```text
+open_ratio ≈ 0.13
+open_ratio ≈ 0.20
+open_ratio ≈ 0.28
+open_ratio ≈ 0.34
 ```
 
-파이프라인만 빠르게 점검하려면 `--limit 400 --epochs 2` 를 붙인다.
+따라서 입 벌림 정도가 실시간으로 정상 측정되는 것을 확인하였다.
 
-결과는 `model/artifacts/` 에 `.keras` + `_metrics.json` 으로 떨어진다.
-학습 없이 평가만 다시 하려면 `train_yawn.reevaluate(tag)`,
-조건 비교표는 `train_yawn.compare()`.
+게이트 임계값은 다음과 같다.
 
-데이터셋 자체를 다시 만들려면 DMD 원본 영상과 어노테이션이 필요하다
-(`scripts/build_dmd_yawn_dataset.py`, `src/build_dmd_eye_dataset.py`).
-
-### YawDD (하품 데이터 추가분)
-
-DMD 하품 데이터가 16세션뿐이라 YawDD(운전 중 하품 영상 349개)를 붙였다. 원본
-`data/user06.tar` 에서 시작해 두 단계로 만든다.
-
-```bash
-python scripts/prepare_yawdd.py             # 압축 해제 결과 정규화 + 검증 -> raw/YawDD/
-python scripts/build_yawdd_yawn_dataset.py --all   # 얼굴 crop + manifest -> processed_yawdd/
-python scripts/build_yawn_mouthopen_dataset.py --measure --build   # 입 벌린 것만 -> yawn_mouthopen_v2/
+```python
+DEFAULT_THRESHOLD = 0.05
 ```
 
-**YawDD 의 라벨은 영상 단위다.** `Yawning` 영상에 하품이 들어 있다는 뜻이지 그 영상의
-모든 프레임이 하품이라는 뜻이 아니다. 반면 `Normal`·`Talking` 영상은 모든 프레임이
-하품이 아닌 것이 확실하다(`Talking` 은 "입은 열리는데 하품은 아닌" 표본이라 오경보를
-줄이는 데 특히 값이 있다). 그래서 manifest 에 `label_quality`(strong/weak)를 함께
-적었다. **약한 라벨을 거르지 않고 그대로 학습하면 안 된다** —
-`Dataset/processed_yawdd/README.md` §3 을 먼저 읽을 것.
+최근 `hold` 프레임에서 측정한 `open_ratio`의 최댓값이 임계값을 초과하면 Yawn CNN을 실행한다.
 
-학습은 `--manifest` 로 다른 manifest 를 지정해 돌린다(기본값은 DMD 그대로다).
+```text
+open_ratio <= threshold
+    → Mouth CLOSED
+    → Yawn CNN 실행하지 않음
+    → p(yawn) = 0
 
-```bash
-python src/train_yawn.py --train face \
-    --manifest ../Dataset/processed_yawdd/metadata/manifest.csv
+open_ratio > threshold
+    → Mouth OPEN
+    → Yawn CNN 실행
 ```
 
-### 입 벌린 negative (`yawn_mouthopen_v2`)
 
-하품 모델의 오경보가 많은 이유는 negative 가 대부분 **입을 다물고** 있어서다. 모델이
-하품이 아니라 "입이 벌어졌는가"를 배우고, 말하는 운전자에게 그대로 경보를 울린다.
+---
 
-`build_yawn_mouthopen_dataset.py` 는 mediapipe 랜드마커로 입 벌림(`open_ratio`)을 재서
-**두 클래스 양쪽에서** 입 다문 프레임을 뺀다. DMD 와 YawDD 를 함께 쓴다.
+## 8. 하품 시간축 누적 판정
 
-```bash
-python scripts/build_yawn_mouthopen_dataset.py --measure --sources dmd yawdd
-python scripts/build_yawn_mouthopen_dataset.py --stats     # 임계값 고르기
-python scripts/build_yawn_mouthopen_dataset.py --build     # -> yawn_mouthopen_v2/
+한 프레임의 CNN 출력만으로 하품을 판단하면 말하거나 잠깐 입을 벌리는 행동을 하품으로 잘못 판단할 가능성이 있다.
+
+이를 줄이기 위해 `YawnAccumulator`를 이용하여 하품 확률과 입 벌림 정도를 시간축으로 누적한다.
+
+실시간 처리 흐름은 다음과 같다.
+
+```text
+Face Detection
+      ↓
+Face Crop
+      ↓
+MediaPipe FaceLandmarker
+      ↓
+open_ratio 계산
+      ↓
+MouthGate
+      ↓
+입이 충분히 벌어졌는가?
+   ├─ No  → p(yawn)=0
+   └─ Yes → Yawn CNN
+                ↓
+            p(yawn)
+                ↓
+        YawnAccumulator
+                ↓
+        시간축 하품 판정
+                ↓
+          Yawn Event
 ```
 
-임계값 0.05 로 7,919장(no_yawn 4,103 / yawn 3,816), 피험자 81명. 이미지는 하드링크라
-용량이 늘지 않는다.
+최종적으로 `YawnAccumulator`의 상태가 `False → True`로 변경되는 순간을 하나의 하품 이벤트로 기록한다.
 
-**두 출처의 역할이 정반대다.** DMD 의 `no_yawn` 은 정상 주행이라 거의 다 입을 다물고
-있어서(임계값을 넘는 것이 5%) 합본에서 DMD 는 사실상 positive 공급원이다 - 대신
-프레임 단위 GT 라 라벨이 정확하다. "입은 벌렸는데 하품이 아닌" negative 는 89% 가
-YawDD 의 `talking` 에서 온다. 한쪽만으로는 이 데이터셋이 성립하지 않는다.
+이를 통해 하품이 지속되는 동안 매 프레임을 각각 하나의 하품으로 세지 않고, 하나의 연속된 하품 행동을 **1회**로 집계한다.
 
-`yawn_with_hand`(손이 입을 가려 벌림을 잴 수 없다)와 `talking_yawning`(한 영상에
-말하기와 하품이 섞여 프레임 라벨 불가)은 제외한다.
 
-```bash
-python src/train_yawn_zoo.py --arch cnn_large \
-    --manifest ../Dataset/yawn_mouthopen_v2/metadata/manifest.csv
+---
+
+## 9. 디버깅 출력 제거
+
+문제 확인 과정에서 다음과 같은 디버깅 출력을 임시로 추가하였다.
+
+```text
+[YAWN FLOW DEBUG]
+[GATE DEBUG]
+[MOUTH DEBUG]
+FaceLandmarker OK
+MouthMeter 결과
 ```
 
-임계값을 바꾸거나(`--threshold`), 두 클래스의 입 벌림 분포를 아예 같게 맞춰
-"입 벌린 정도"라는 지름길을 막는(`--match-openness`) 것도 된다. 측정값은 CSV 로 남아서
-다시 자를 때는 몇 초면 끝난다. 옛 YawDD 전용 데이터셋은
-`--sources yawdd --threshold 0.10 --out yawn_mouthopen` 으로 그대로 재현된다.
+이를 통해 다음 항목을 확인하였다.
 
-### 추론에도 같은 문을 단다 (`src/mouth_gate.py`)
+- `MouthGate` 객체 생성 여부
+- FaceLandmarker 실행 여부
+- 얼굴 랜드마크 검출 여부
+- `open_ratio` 계산 여부
+- MouthGate OPEN/CLOSED 여부
+- Yawn CNN 출력값
 
-데이터셋을 이렇게 만들었으면 **추론도 같은 조건이어야 한다.** 입 다문 프레임은 CNN 이
-본 적 없는 입력이라 넣으면 값이 튄다. `02_INFER_YuNet.ipynb` 는 CNN 앞에 게이트를 둔다.
+문제 해결 후에는 해당 `print()` 문이 웹캠의 매 프레임마다 실행되어 Jupyter 출력이 과도하게 증가하므로 최종 코드에서 제거하였다.
 
+최종 코드에서는 필요한 추론 및 측정 기능만 유지한다.
+
+
+---
+
+# 10. 운전자 모니터링 지표 추가
+
+실시간 웹캠 측정이 종료된 후 단순히 `DROWSY / NORMAL`만 출력하는 것이 아니라, 측정 세션 동안 발생한 운전자의 졸음 관련 행동을 요약하도록 수정하였다.
+
+추가한 주요 지표는 다음과 같다.
+
+### 졸음 의심 눈 감김 횟수
+
+눈 감김 상태가 일정 시간 이상 지속된 경우를 하나의 이벤트로 집계한다.
+
+현재 기준:
+
+```python
+suspicious_closure_sec = 0.15
 ```
-open_ratio <= 0.05  ->  CNN 을 부르지 않고 p(yawn) = 0
-open_ratio >  0.05  ->  CNN 에 물어본다
+
+따라서 **0.15초 이상 지속된 눈 감김**만 졸음 의심 눈 감김 이벤트로 기록한다.
+
+
+### 최대 눈 감김 시간
+
+전체 측정 시간 동안 발생한 눈 감김 이벤트 중 가장 길게 눈을 감고 있었던 시간을 기록한다.
+
+예:
+
+```text
+최대 눈 감김 시간        1.24 sec
 ```
 
-측정 함수는 `src/mouth_gate.py` 한 곳에만 있고 데이터셋 빌더가 그것을 import 한다.
-두 곳에 따로 두면 값이 조용히 갈라지기 때문이다. 노트북은 실행할 때 게이트 임계값과
-가중치를 만든 데이터셋의 임계값이 같은지 확인하고, 다르면 경고한다.
 
-**임계값이 곧 Recall 상한이다.** 게이트에 걸린 하품은 모델이 아무리 좋아도 못 잡는다.
-DMD 하품 프레임(n=1,148, 프레임 단위 GT) 기준:
+### PERCLOS
 
-| 게이트 | 하품인데 걸리는 비율 | Recall 상한 |
-|---|---|---|
-| 0.03 | 7.8% | 0.922 |
-| **0.05** | **10.5%** | **0.895** |
-| 0.08 | 14.4% | 0.856 |
-| 0.10 | 18.3% | 0.817 |
+전체 측정 시간 중 눈이 감겨 있던 시간의 비율을 이용하여 운전자의 눈 감김 상태를 평가한다.
 
-게이트는 실시간 루프(`run_realtime_scores`)에도 들어 있다. 그 루프는 속도 때문에
-`yawn_detection()` 을 거치지 않고 모델을 직접 부르므로, 게이트를 양쪽에 두지 않으면
-낱장 추론에서만 걸리고 실시간에서는 빠진다.
+현재 기본 임계값:
 
-### 하품은 시간으로 누적한다 (`src/yawn_accumulator.py`)
+```python
+perclos_threshold = 0.15
+```
 
-게이트를 통과한 다음에도 문제가 남는다. 프레임 한 장으로는 하품과 말하기를 가를 수
-없어서, **말하기 세션의 68% 에서 최소 한 번 하품 경보가 뜬다**(YawDD val+test 41세션).
+즉 PERCLOS가 약 15% 이상이면 높은 PERCLOS 상태로 판단하도록 구성하였다.
 
-재학습으로 풀려면 시퀀스 모델이 필요한데 하품 사건이 180개뿐이라 지금 데이터로는
-과적합한다. 대신 이미 매 프레임 나오는 두 신호를 시간축으로 묶는다.
 
-| | 하는 일 |
+### 하품 횟수
+
+`YawnAccumulator`에서 새로운 하품 이벤트가 발생한 횟수를 집계한다.
+
+하품 상태가 유지되는 동안에는 추가로 카운트하지 않고 새로운 하품이 시작될 때만 1회 증가한다.
+
+
+### 졸음 경고 횟수
+
+최종 결합 졸음 점수가 정상 상태에서 DROWSY 상태로 전환되는 순간을 하나의 졸음 경고 이벤트로 집계한다.
+
+
+---
+
+# 11. 주요 졸음 의심 행동
+
+측정된 지표를 기반으로 세션 종료 후 주요 졸음 의심 행동을 함께 출력하도록 추가하였다.
+
+현재 사용하는 기준은 다음과 같다.
+
+| 조건 | 출력 |
 |---|---|
-| 누수 적분기 | `p_yawn` 이 판정선을 넘는 동안 시간을 쌓고, 못 넘으면 3배로 깎는다 |
-| 최대 벌림 | 최근 3초의 최대 `open_ratio`. 말하기는 0.20 을 잘 못 넘는다 |
+| 졸음 의심 눈 감김 3회 이상 | 반복적인 장시간 눈 감김 |
+| 최대 눈 감김 시간 1초 이상 | 1초 이상의 장시간 눈 감김 |
+| PERCLOS 임계값 이상 | 높은 PERCLOS |
+| 하품 2회 이상 | 반복적인 하품 |
 
-근거 (YawDD 세션 단위 중앙값): 말하기는 입이 **3배 빠르게** 움직이고(|기울기| 0.056
-대 0.018/초), 하품은 **2배 넓게** 벌어진다(최대 open_ratio 0.453 대 0.195).
+예:
 
-| | YawDD 하품 | YawDD 말하기 | DMD 사건 Recall | DMD 오경보 |
-|---|---|---|---|---|
-| 누적 없음 | 0.977 | 0.683 | 0.941 | 0.0032 |
-| **누적 적용** | 0.860 | **0.195** | 0.824 | 0.0016 |
+```text
+주요 졸음 의심 행동
 
-말하기 오경보가 **71% 줄어든다.** 대가로 하품 검출이 0.977 -> 0.860 으로 내려간다.
-split 을 나눠도 방향은 같지만(val 말하기 0.650->0.300, test 0.714->0.095) split 당
-세션이 20개 남짓이라 소수점 둘째 자리는 믿을 값이 아니다.
-
-놓치는 쪽이 더 급하면 `YawnAccumulator(peak_min=0.0, fire=0.20)` 으로 두면 된다.
-말하기가 0.439 로 덜 줄지만 DMD 사건 Recall 이 0.941 로 손실이 없다 — 손으로 가린
-하품은 입이 안 보여 `open_ratio` 가 낮으므로 `peak_min` 이 그쪽을 깎기 때문이다.
-
-**프레임이 아니라 시간을 센다.** 추론 루프가 입을 벌리면 22Hz, 다물면 30Hz 로 돌고
-PC 마다도 다르기 때문이다(실측). `PerclosTracker` 가 dt 를 더하는 것과 같은 이유다.
-
-`--measure` 에는 mediapipe 랜드마커 모델이 필요하다. `.gitignore` 가 `*.task` 를
-막으므로(3.7MB) 각자 받아 `model/detectors/face_landmarker.task` 에 둔다. 측정은 한 번만
-하면 되고, 결과 CSV 가 남아서 다시 자를 때는 모델이 없어도 된다.
-
-```bash
-curl -L -o model/detectors/face_landmarker.task \
-  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+• 반복적인 장시간 눈 감김
+• 높은 PERCLOS
+• 반복적인 하품
 ```
 
-## 5. 평가에서 지킨 것
 
-숫자를 인용하기 전에 알아 둘 것.
+---
 
-- **split 은 피험자 단위다.** test 에 나오는 사람은 학습에서 본 적이 없다.
-  눈·하품 데이터셋이 같은 매핑을 써서, 두 모델을 합쳐 평가해도 test 피험자가
-  학습에 노출되지 않는다.
-- **판정 임계값은 val 에서 고르고 test 에 그대로 적용한다.** test 에서 고르면
-  낙관 편향이 생긴다. (하품은 이 방식이 역효과여서 0.50 고정을 쓴다 — `docs/yawn_model.md` §3)
-- **하품 test 의 클래스 비율은 실제와 다르다.** 샘플링 때문에 하품이 45% 인데
-  실제 운전 중에는 14% 안팎이다. 그래서 실제 비율로 환산한 Precision 을
-  `precision_at_real_prior` 로 함께 기록한다.
-- **여기 숫자는 전부 프레임 단위다.** 실시간 경로는 EMA 로 시간축 누적을 하므로
-  더 나을 것이고, 지금 숫자는 하한에 가깝다. 다만 얼마나 나은지는 영상 단위로
-  재 봐야 안다 — 아직 안 했다.
+# 12. DRIVER MONITORING REPORT
 
-## 6. 데이터를 커밋하지 않는 이유
+웹캠 실행을 종료하면 전체 측정 세션을 요약한 `DRIVER MONITORING REPORT`를 출력하도록 수정하였다.
 
-`.gitignore` 가 `data/`, 영상 파일, 대용량 포맷을 막는다.
+웹캠 영상 및 얼굴 이미지는 개인정보 보호를 위해 저장하거나 저장소에 포함하지 않고, **측정된 지표와 텍스트 형태의 결과만 출력한다.**
 
-1. **용량** — 영상 데이터셋은 GB 단위. GitHub 는 파일당 100MB 제한이 있고 히스토리에 남는다.
-2. **라이선스** — DMD 등은 재배포 제한이 있다. 학습된 가중치는 파생물이라 괜찮지만
-   **원본 프레임을 저장소에 올리면 안 된다.**
-3. **초상권** — 직접 촬영한 얼굴 영상이 섞인다.
+## 출력 예시
 
-학습된 `.keras` 도 저장소에 넣지 않고 **Release 로 배포한다**(태그 `weights-260820`).
-저장소가 무거워지지 않고, 가중치를 갱신해도 코드 히스토리가 지저분해지지 않는다.
-평가 지표(`_metrics.json`)만 추적한다 — 전부 40KB 이고 근거 자료이기 때문이다.
+```text
+====================================
+       DRIVER MONITORING REPORT
+====================================
+
+측정 시간              03:00
+
+[눈 상태]
+졸음 의심 눈 감김       7회
+최대 눈 감김 시간        1.24 sec
+PERCLOS                 18.3 %
+
+[하품]
+하품                     3회
+
+[졸음 감지]
+졸음 경고                4회
+
+------------------------------------
+주요 졸음 의심 행동
+
+• 반복적인 장시간 눈 감김
+• 1초 이상의 장시간 눈 감김
+• 높은 PERCLOS
+• 반복적인 하품
+
+종합 상태
+⚠ DROWSINESS SUSPECTED
+====================================
+```
+
+정상 상태의 경우 다음과 같이 출력된다.
+
+```text
+====================================
+       DRIVER MONITORING REPORT
+====================================
+
+측정 시간              03:00
+
+[눈 상태]
+졸음 의심 눈 감김       0회
+최대 눈 감김 시간        0.08 sec
+PERCLOS                 4.2 %
+
+[하품]
+하품                     0회
+
+[졸음 감지]
+졸음 경고                0회
+
+------------------------------------
+주요 졸음 의심 행동
+
+• 특이사항 없음
+
+종합 상태
+✓ NORMAL
+====================================
+```
+
+
+---
+
+# 13. 최종 변경 사항
+
+이번 수정의 주요 내용은 다음과 같다.
+
+1. 비활성화되어 있던 `MouthGate` 활성화
+2. MediaPipe FaceLandmarker 기반 입 벌림 측정 적용
+3. `open_ratio`가 `None`으로 전달되던 문제 해결
+4. 입 벌림 여부에 따른 Yawn CNN 실행 제어
+5. Yawn CNN과 `YawnAccumulator` 연결 및 시간축 하품 판정
+6. 연속된 하품을 하나의 하품 이벤트로 집계
+7. 0.15초 이상 지속된 졸음 의심 눈 감김 횟수 추가
+8. 최대 연속 눈 감김 시간 측정
+9. PERCLOS 기반 졸음 지표 추가
+10. 하품 횟수 및 DROWSY 경고 횟수 집계
+11. 주요 졸음 의심 행동 요약 추가
+12. 측정 종료 후 `DRIVER MONITORING REPORT` 출력
+13. 문제 확인을 위해 추가했던 디버깅 출력 제거
+14. 웹캠 얼굴 영상/이미지는 저장하지 않고 텍스트 결과만 제공
