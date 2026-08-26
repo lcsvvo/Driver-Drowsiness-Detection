@@ -146,18 +146,6 @@ ModuleNotFoundError: No module named 'mediapipe'
 python -m pip install mediapipe
 ```
 
-설치 과정에서 OpenCV의 `cv2.pyd`가 Jupyter/VS Code에서 사용 중이어서 다음 오류가 발생하기도 하였다.
-
-```text
-[WinError 5] 액세스가 거부되었습니다:
-.venv\Lib\site-packages\cv2\cv2.pyd
-```
-
-실행 중인 Jupyter 커널 및 Python 프로세스를 종료한 후 가상환경에서 다시 설치하여 해결하였다.
-
-설치 후 MediaPipe와 OpenCV가 정상적으로 import되는 것을 확인하였다.
-
-
 ---
 
 ## 7. MouthGate 동작 확인
