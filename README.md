@@ -4,7 +4,7 @@
 
 얼굴 검출에는 YuNet, 눈과 하품 분류에는 CNN을 사용합니다. 눈 감김의 단기 변화, 최근 구간의 PERCLOS, 시간축으로 누적한 하품 점수를 결합해 `NORMAL`, `DROWSY`, `NO FACE` 상태를 화면에 표시합니다.
 
-최종 코드는 [`Drowsiness-Detection-260824`](https://github.com/lcsvvo/Driver-Drowsiness-Detection/tree/Drowsiness-Detection-260824) 브랜치에 있습니다. 아래 구조와 실행 방법도 이 브랜치를 기준으로 합니다.
+이 README와 `main` 브랜치는 최종 구현을 기준으로 합니다. 원본 개발 브랜치는 [`Drowsiness-Detection-260824`](https://github.com/lcsvvo/Driver-Drowsiness-Detection/tree/Drowsiness-Detection-260824), 보존용 복사본은 [`backup/Drowsiness-Detection-260824`](https://github.com/lcsvvo/Driver-Drowsiness-Detection/tree/backup/Drowsiness-Detection-260824)입니다.
 
 > 이 프로젝트는 실험용 프로토타입입니다. 실제 차량의 안전 장치나 의료 진단 도구로 사용할 수 없습니다.
 
@@ -171,7 +171,7 @@ Eye CNN / Yawn CNN 학습과 평가
 ### 1. 저장소와 가상환경
 
 ```bash
-git clone --branch Drowsiness-Detection-260824 --single-branch https://github.com/lcsvvo/Driver-Drowsiness-Detection.git
+git clone https://github.com/lcsvvo/Driver-Drowsiness-Detection.git
 cd Driver-Drowsiness-Detection
 python -m venv .venv
 ```

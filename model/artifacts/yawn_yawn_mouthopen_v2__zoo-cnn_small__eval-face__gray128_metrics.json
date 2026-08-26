@@ -1,0 +1,482 @@
+{
+  "tag": "yawn_mouthopen_v2__zoo-cnn_small__eval-face__gray128",
+  "train": [
+    "face"
+  ],
+  "eval_view": "face",
+  "size": 128,
+  "gray": true,
+  "sharpen": false,
+  "dataset": "yawn_mouthopen_v2",
+  "classes": {
+    "0": "yawn",
+    "1": "no_yawn"
+  },
+  "threshold": 0.09,
+  "threshold_reached_target": true,
+  "threshold_grid_saturated": false,
+  "target_recall": 0.9,
+  "test_main": {
+    "threshold": 0.09,
+    "n": 1553,
+    "accuracy": 0.6149,
+    "yawn_recall": 0.8535,
+    "yawn_precision": 0.5939,
+    "yawn_f1": 0.7004,
+    "false_positive_rate": 0.6512,
+    "precision_at_real_prior": 0.1758,
+    "real_prior": 0.14,
+    "confusion": {
+      "yawn_as_yawn": 699,
+      "yawn_as_no": 120,
+      "no_as_yawn": 478,
+      "no_as_no": 256
+    }
+  },
+  "test_main_at_050": {
+    "threshold": 0.5,
+    "n": 1553,
+    "accuracy": 0.6684,
+    "yawn_recall": 0.5849,
+    "yawn_precision": 0.7324,
+    "yawn_f1": 0.6504,
+    "false_positive_rate": 0.2384,
+    "precision_at_real_prior": 0.2854,
+    "real_prior": 0.14,
+    "confusion": {
+      "yawn_as_yawn": 479,
+      "yawn_as_no": 340,
+      "no_as_yawn": 175,
+      "no_as_no": 559
+    }
+  },
+  "test_other": null,
+  "by_yawn_type": {},
+  "by_glasses": {
+    "glasses=False": {
+      "threshold": 0.09,
+      "n": 749,
+      "accuracy": 0.5714,
+      "yawn_recall": 0.8259,
+      "yawn_precision": 0.587,
+      "yawn_f1": 0.6862,
+      "false_positive_rate": 0.7623,
+      "precision_at_real_prior": 0.1499,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 351,
+        "yawn_as_no": 74,
+        "no_as_yawn": 247,
+        "no_as_no": 77
+      }
+    },
+    "glasses=True": {
+      "threshold": 0.09,
+      "n": 804,
+      "accuracy": 0.6555,
+      "yawn_recall": 0.8832,
+      "yawn_precision": 0.601,
+      "yawn_f1": 0.7153,
+      "false_positive_rate": 0.5634,
+      "precision_at_real_prior": 0.2033,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 348,
+        "yawn_as_no": 46,
+        "no_as_yawn": 231,
+        "no_as_no": 179
+      }
+    }
+  },
+  "by_subject": {
+    "gB_6": {
+      "threshold": 0.5,
+      "n": 59,
+      "accuracy": 0.9492,
+      "yawn_recall": 1.0,
+      "yawn_precision": 0.9492,
+      "yawn_f1": 0.9739,
+      "false_positive_rate": 1.0,
+      "precision_at_real_prior": 0.14,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 56,
+        "yawn_as_no": 0,
+        "no_as_yawn": 3,
+        "no_as_no": 0
+      }
+    },
+    "gC_13": {
+      "threshold": 0.5,
+      "n": 73,
+      "accuracy": 0.5205,
+      "yawn_recall": 0.4167,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.5882,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 25,
+        "yawn_as_no": 35,
+        "no_as_yawn": 0,
+        "no_as_no": 13
+      }
+    },
+    "gE_29": {
+      "threshold": 0.5,
+      "n": 69,
+      "accuracy": 0.8696,
+      "yawn_recall": 0.8657,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.928,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 58,
+        "yawn_as_no": 9,
+        "no_as_yawn": 0,
+        "no_as_no": 2
+      }
+    },
+    "gZ_37": {
+      "threshold": 0.5,
+      "n": 61,
+      "accuracy": 1.0,
+      "yawn_recall": 1.0,
+      "yawn_precision": 1.0,
+      "yawn_f1": 1.0,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 61,
+        "yawn_as_no": 0,
+        "no_as_yawn": 0,
+        "no_as_no": 0
+      }
+    },
+    "mF02": {
+      "threshold": 0.5,
+      "n": 109,
+      "accuracy": 0.4404,
+      "yawn_recall": 0.0,
+      "yawn_precision": 0.0,
+      "yawn_f1": 0.0,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 0.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 0,
+        "yawn_as_no": 61,
+        "no_as_yawn": 0,
+        "no_as_no": 48
+      }
+    },
+    "mF07": {
+      "threshold": 0.5,
+      "n": 36,
+      "accuracy": 0.6667,
+      "yawn_recall": 1.0,
+      "yawn_precision": 0.6571,
+      "yawn_f1": 0.7931,
+      "false_positive_rate": 0.9231,
+      "precision_at_real_prior": 0.1499,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 23,
+        "yawn_as_no": 0,
+        "no_as_yawn": 12,
+        "no_as_no": 1
+      }
+    },
+    "mF08": {
+      "threshold": 0.5,
+      "n": 74,
+      "accuracy": 0.8514,
+      "yawn_recall": 0.7561,
+      "yawn_precision": 0.9688,
+      "yawn_f1": 0.8493,
+      "false_positive_rate": 0.0303,
+      "precision_at_real_prior": 0.8024,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 31,
+        "yawn_as_no": 10,
+        "no_as_yawn": 1,
+        "no_as_no": 32
+      }
+    },
+    "mF09": {
+      "threshold": 0.5,
+      "n": 68,
+      "accuracy": 0.4412,
+      "yawn_recall": 0.1667,
+      "yawn_precision": 0.1154,
+      "yawn_f1": 0.1364,
+      "false_positive_rate": 0.46,
+      "precision_at_real_prior": 0.0557,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 3,
+        "yawn_as_no": 15,
+        "no_as_yawn": 23,
+        "no_as_no": 27
+      }
+    },
+    "mF15": {
+      "threshold": 0.5,
+      "n": 63,
+      "accuracy": 0.746,
+      "yawn_recall": 0.4643,
+      "yawn_precision": 0.9286,
+      "yawn_f1": 0.619,
+      "false_positive_rate": 0.0286,
+      "precision_at_real_prior": 0.7257,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 13,
+        "yawn_as_no": 15,
+        "no_as_yawn": 1,
+        "no_as_no": 34
+      }
+    },
+    "mF16": {
+      "threshold": 0.5,
+      "n": 77,
+      "accuracy": 0.4675,
+      "yawn_recall": 0.0238,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.0465,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 1,
+        "yawn_as_no": 41,
+        "no_as_yawn": 0,
+        "no_as_no": 35
+      }
+    },
+    "mF18": {
+      "threshold": 0.5,
+      "n": 119,
+      "accuracy": 0.6471,
+      "yawn_recall": 0.1818,
+      "yawn_precision": 0.2857,
+      "yawn_f1": 0.2222,
+      "false_positive_rate": 0.1744,
+      "precision_at_real_prior": 0.1451,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 6,
+        "yawn_as_no": 27,
+        "no_as_yawn": 15,
+        "no_as_no": 71
+      }
+    },
+    "mF41": {
+      "threshold": 0.5,
+      "n": 66,
+      "accuracy": 0.5606,
+      "yawn_recall": 0.1818,
+      "yawn_precision": 0.75,
+      "yawn_f1": 0.2927,
+      "false_positive_rate": 0.0606,
+      "precision_at_real_prior": 0.3281,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 6,
+        "yawn_as_no": 27,
+        "no_as_yawn": 2,
+        "no_as_no": 31
+      }
+    },
+    "mM03": {
+      "threshold": 0.5,
+      "n": 80,
+      "accuracy": 0.625,
+      "yawn_recall": 0.6957,
+      "yawn_precision": 0.6667,
+      "yawn_f1": 0.6809,
+      "false_positive_rate": 0.4706,
+      "precision_at_real_prior": 0.194,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 32,
+        "yawn_as_no": 14,
+        "no_as_yawn": 16,
+        "no_as_no": 18
+      }
+    },
+    "mM06": {
+      "threshold": 0.5,
+      "n": 50,
+      "accuracy": 0.68,
+      "yawn_recall": 0.9583,
+      "yawn_precision": 0.6053,
+      "yawn_f1": 0.7419,
+      "false_positive_rate": 0.5769,
+      "precision_at_real_prior": 0.2129,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 23,
+        "yawn_as_no": 1,
+        "no_as_yawn": 15,
+        "no_as_no": 11
+      }
+    },
+    "mM08": {
+      "threshold": 0.5,
+      "n": 24,
+      "accuracy": 0.7083,
+      "yawn_recall": 0.6667,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.8,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 14,
+        "yawn_as_no": 7,
+        "no_as_yawn": 0,
+        "no_as_no": 3
+      }
+    },
+    "mM17": {
+      "threshold": 0.5,
+      "n": 50,
+      "accuracy": 0.58,
+      "yawn_recall": 0.3824,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.5532,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 13,
+        "yawn_as_no": 21,
+        "no_as_yawn": 0,
+        "no_as_no": 16
+      }
+    },
+    "mM23": {
+      "threshold": 0.5,
+      "n": 131,
+      "accuracy": 0.5878,
+      "yawn_recall": 0.7805,
+      "yawn_precision": 0.64,
+      "yawn_f1": 0.7033,
+      "false_positive_rate": 0.7347,
+      "precision_at_real_prior": 0.1474,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 64,
+        "yawn_as_no": 18,
+        "no_as_yawn": 36,
+        "no_as_no": 13
+      }
+    },
+    "mM25": {
+      "threshold": 0.5,
+      "n": 140,
+      "accuracy": 0.95,
+      "yawn_recall": 0.8065,
+      "yawn_precision": 0.9615,
+      "yawn_f1": 0.8772,
+      "false_positive_rate": 0.0092,
+      "precision_at_real_prior": 0.9347,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 25,
+        "yawn_as_no": 6,
+        "no_as_yawn": 1,
+        "no_as_no": 108
+      }
+    },
+    "mM30": {
+      "threshold": 0.5,
+      "n": 45,
+      "accuracy": 0.9333,
+      "yawn_recall": 0.75,
+      "yawn_precision": 1.0,
+      "yawn_f1": 0.8571,
+      "false_positive_rate": 0.0,
+      "precision_at_real_prior": 1.0,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 9,
+        "yawn_as_no": 3,
+        "no_as_yawn": 0,
+        "no_as_no": 33
+      }
+    },
+    "mM35": {
+      "threshold": 0.5,
+      "n": 56,
+      "accuracy": 0.1429,
+      "yawn_recall": 0.2,
+      "yawn_precision": 0.0222,
+      "yawn_f1": 0.04,
+      "false_positive_rate": 0.8627,
+      "precision_at_real_prior": 0.0364,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 1,
+        "yawn_as_no": 4,
+        "no_as_yawn": 44,
+        "no_as_no": 7
+      }
+    },
+    "mM39": {
+      "threshold": 0.5,
+      "n": 60,
+      "accuracy": 0.5833,
+      "yawn_recall": 0.2143,
+      "yawn_precision": 0.6667,
+      "yawn_f1": 0.3243,
+      "false_positive_rate": 0.0938,
+      "precision_at_real_prior": 0.2712,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 6,
+        "yawn_as_no": 22,
+        "no_as_yawn": 3,
+        "no_as_no": 29
+      }
+    },
+    "mM47": {
+      "threshold": 0.5,
+      "n": 43,
+      "accuracy": 0.8372,
+      "yawn_recall": 0.6923,
+      "yawn_precision": 0.75,
+      "yawn_f1": 0.72,
+      "false_positive_rate": 0.1,
+      "precision_at_real_prior": 0.5299,
+      "real_prior": 0.14,
+      "confusion": {
+        "yawn_as_yawn": 9,
+        "yawn_as_no": 4,
+        "no_as_yawn": 3,
+        "no_as_no": 27
+      }
+    }
+  },
+  "subject_spread": {
+    "n_subjects": 22,
+    "accuracy_min": 0.1429,
+    "accuracy_max": 1.0,
+    "accuracy_std": 0.2051
+  },
+  "n_train": 4726,
+  "n_val": 1640,
+  "n_test": 1553,
+  "model": "model\\artifacts\\yawn_yawn_mouthopen_v2__zoo-cnn_small__eval-face__gray128.keras",
+  "arch": "cnn_small",
+  "zoo_kind": "cnn",
+  "training": "scratch",
+  "params": 822018,
+  "zoo_note": "기존 배포 구조와 동일(train_yawn.build_yawn_model, Flatten 기반). student 후보이자 구조 기준점. Flatten 특성상 GAP 기반인 cnn_base/cnn_large 보다 파라미터가 많다."
+}

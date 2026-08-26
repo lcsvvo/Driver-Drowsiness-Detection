@@ -1,0 +1,8 @@
+check,value
+mrl: 2개 이상 split 에 등장하는 subject 수,0
+dmd: 2개 이상 split 에 등장하는 subject 수,0
+dmd: 2개 이상 split 에 등장하는 video 수,0
+"dmd: 같은 (video, frame) 의 L/R 이 다른 split 에 있는 경우",0
+mrl/dmd subject ID 충돌 수,0
+path 중복 수,0
+label 과 class_idx 불일치 수,0
