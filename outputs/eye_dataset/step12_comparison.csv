@@ -1,0 +1,5 @@
+cond,tag,thr,closed_recall,closed_precision,closed_f1,accuracy,other_closed_recall,n_test_frames
+C MRL+DMD,mrl+dmd__eval-dmd__gray128,0.93,0.9138,0.7871,0.8457,0.9624,0.8624,3805
+C' MRL->DMD ft,dmd__eval-dmd__gray128__ft,0.9500000000000001,0.8811,0.806,0.8419,0.9627,0.9195,3805
+A MRL only,mrl__eval-dmd__gray128,0.98,0.8531,0.3166,0.4618,0.7758,0.7284,3805
+B DMD only,dmd__eval-dmd__gray128,0.93,0.5967,0.9552,0.7346,0.9514,0.8709,3805

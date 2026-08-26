@@ -61,6 +61,21 @@ DATA_DIR: Path = PROJECT_ROOT / "data"
 #: 실행 결과(로그, 캡처, 데모 영상). git 추적 제외.
 OUTPUTS_DIR: Path = PROJECT_ROOT / "outputs"
 
+#: 학습이 남긴 가중치(.keras)와 평가 지표(_metrics.json).
+#: 01_TRAIN.ipynb 와 src/train_eye.py 가 여기에 쓰고, 02_INFER_YuNet.ipynb 가 읽는다.
+ARTIFACT_DIR: Path = PROJECT_ROOT / "model" / "artifacts"
+
+#: 사전학습 얼굴 검출기(YuNet). 우리가 학습하지 않고 받아서 쓴다.
+#: 브랜치에 따라 놓인 위치가 달라서(model/detectors vs data/models) 있는 쪽을 고른다.
+#: 둘 다 없으면 첫 번째 경로를 그대로 돌려주고, 없다는 사실은 호출부가 알린다.
+_YUNET_CANDIDATES: tuple[Path, ...] = (
+    PROJECT_ROOT / "model" / "detectors" / "face_detection_yunet_2023mar.onnx",
+    DATA_DIR / "models" / "face_detection_yunet_2023mar.onnx",
+)
+YUNET_MODEL: Path = next(
+    (p for p in _YUNET_CANDIDATES if p.exists()), _YUNET_CANDIDATES[0]
+)
+
 _MANAGED_DIRS: tuple[Path, ...] = (DATA_DIR, OUTPUTS_DIR)
 
 
@@ -102,9 +117,14 @@ def describe() -> None:
     절대경로가 필요하면 config.PROJECT_ROOT를 직접 참조한다.
     """
     print(f"PROJECT_ROOT : {PROJECT_ROOT.name}")
-    for name, path in (("DATA_DIR", DATA_DIR), ("OUTPUTS_DIR", OUTPUTS_DIR)):
+    for name, path in (("DATA_DIR", DATA_DIR),
+                       ("OUTPUTS_DIR", OUTPUTS_DIR),
+                       ("ARTIFACT_DIR", ARTIFACT_DIR)):
         mark = "OK" if path.is_dir() else "MISSING"
         print(f"  [{mark:<7}] {name:<12}: {_rel(path)}")
+
+    mark = "OK" if YUNET_MODEL.is_file() else "MISSING"
+    print(f"  [{mark:<7}] {'YUNET_MODEL':<12}: {_rel(YUNET_MODEL)}")
 
 
 if __name__ == "__main__":
