@@ -1,187 +1,279 @@
-# Driver Drowsiness & Distraction Detection
+# Driver Drowsiness Detection
 
-웹캠 영상에서 운전자의 **졸음**과 **주의 산만**을 실시간으로 감지하고 경고하는 시스템. 4인 팀 프로젝트.
+웹캠 영상에서 운전자의 눈 감김과 하품을 실시간으로 분석해 졸음 가능성을 표시하는 프로젝트입니다.
 
-`Status: Initial Setup` `Python 3.9+` `License: TBD`
+얼굴 검출에는 YuNet, 눈과 하품 분류에는 CNN을 사용합니다. 눈 감김의 단기 변화, 최근 구간의 PERCLOS, 시간축으로 누적한 하품 점수를 결합해 `NORMAL`, `DROWSY`, `NO FACE` 상태를 화면에 표시합니다.
 
-> 이 문서는 저장소 초기 세팅 시점에 작성되었다. **확정된 내용과 미확정 내용을 §3·§9에서 구분해 표기**하며, 미확정 항목은 결정되는 대로 이 README를 갱신한다.
+최종 코드는 [`Drowsiness-Detection-260824`](https://github.com/lcsvvo/Driver-Drowsiness-Detection/tree/Drowsiness-Detection-260824) 브랜치에 있습니다. 아래 구조와 실행 방법도 이 브랜치를 기준으로 합니다.
 
-## 1. 프로젝트 소개
+> 이 프로젝트는 실험용 프로토타입입니다. 실제 차량의 안전 장치나 의료 진단 도구로 사용할 수 없습니다.
 
-- **What**: 웹캠으로 운전자 얼굴을 촬영해 얼굴 랜드마크를 추출하고, 눈·입·머리 방향 상태로부터 졸음 및 주의 산만 여부를 판정해 경고를 발생시킨다.
-- **Why**: 졸음운전과 주행 중 주의 분산은 사고 원인 중 큰 비중을 차지한다. 별도 센서 없이 카메라만으로 동작하는 저비용 감지 방식의 실현 가능성을 직접 구현해 확인한다.
-- **범위**: 학부 수준의 단기 팀 프로젝트. 새로운 모델을 학습시키는 것이 아니라, **기하학적 랜드마크 지표 기반의 실시간 판정 파이프라인을 구현하고 동작을 검증하는 것**이 목표다.
+## 프로젝트 소개
 
-## 2. 문제 정의
+최종 구현 범위는 다음과 같습니다.
 
-단일 프레임의 눈 감김만으로는 졸음을 판정할 수 없다. 눈 깜빡임과 졸음, 하품과 대화, 사이드미러 확인과 주의 산만은 **정지 영상이 아니라 시간 축에서만 구분된다.** 따라서 프레임 단위 지표를 그대로 쓰지 않고, 일정 시간 창(window) 위에서 누적·평활한 값으로 상태를 판정하는 구조가 필요하다.
+- 웹캠 영상에서 가장 큰 얼굴 1개 검출
+- 좌·우 눈 crop의 감김 확률 추론
+- 최근 60초 기준 PERCLOS 계산
+- 입 벌림 게이트, CNN, 시간 누적을 이용한 하품 판정
+- 눈 감김과 하품 신호를 결합한 졸음 점수 표시
+- 세션 종료 후 눈 감김, PERCLOS, 하품, 졸음 경고 횟수 요약
 
-## 3. 목표
+머리 방향, 휴대전화 사용, 안전벨트, 주의 산만 분류는 현재 구현에 포함되지 않습니다.
 
-### 확정된 목표
+## 주요 기능
 
-| # | 목표 | 상태 |
-|---|---|---|
-| G1 | 웹캠 실시간 얼굴 랜드마크 추출 파이프라인 동작 | 확정 |
-| G2 | 눈 감김 기반 졸음 감지 (EAR) | 확정 (baseline 확보) |
-| G3 | 하품 감지 지표 추가 (MAR) | 확정 (미구현) |
-| G4 | 머리 방향 기반 주의 산만 감지 (head pose) | 확정 (미구현) |
-| G5 | `정상 / 졸음 / 주의산만` 3-state 판정 및 경고 출력 | 확정 (미구현) |
+### 눈 감김 감지
 
-### 스트레치 목표 (여력이 있을 때만)
+YuNet이 제공하는 눈 좌표를 기준으로 좌·우 눈을 잘라 128×128 그레이스케일로 전처리합니다. Eye CNN의 두 출력 중 `class 0`을 눈 감김 확률로 사용하며, 좌·우 눈 중 높은 값을 선택합니다.
 
-- 안전벨트 착용 여부 감지
-- 휴대전화 사용 감지
+선택된 모델의 판정 임계값은 `p(Closed) >= 0.93`입니다. 실시간 루프에서는 이 임계값이 내부 점수 `0.5`가 되도록 변환한 뒤 EMA와 PERCLOS 계산에 사용합니다.
 
-> 스트레치 목표는 **핵심 목표 G1–G5가 모두 동작한 이후**에만 착수한다. 현재 계획에 포함되지 않는다.
+### PERCLOS
 
-## 4. 접근 방법
+PERCLOS는 최근 시간 창에서 얼굴이 검출된 시간 중 눈이 감겨 있던 시간의 비율입니다.
 
-| 구성 요소 | 방식 | 상태 |
-|---|---|---|
-| 얼굴 랜드마크 | MediaPipe Face Mesh | 확정 |
-| 졸음 지표 | EAR (Eye Aspect Ratio) | 구현됨 (baseline) |
-| 졸음 누적 지표 | PERCLOS | 미구현 |
-| 하품 지표 | MAR (Mouth Aspect Ratio) | 미구현 |
-| 주의 산만 지표 | 머리 회전각 (OpenCV `solvePnP`) | 미구현 |
-| 상태 판정 | 규칙 기반 3-state 분류 | 미설계 |
-| 임계값 | — | **TBD** (실측 후 결정) |
-| 평가 방법 | — | **TBD** |
-
-**임계값과 평가 방법은 의도적으로 비워둔다.** 임계값은 카메라·조명·개인차에 의존하므로 실제 촬영 데이터로 측정한 뒤 정한다. 지금 숫자를 적으면 근거 없는 값이 코드에 고정된다.
-
-### 이론적 참고 문헌
-
-코드 출처가 아니라 **지표 정의의 근거**로 인용한다.
-
-- Soukupová & Čech (2016), *Real-Time Eye Blink Detection using Facial Landmarks*, CVWW — EAR 정의
-- Albadawi et al. (2023), *Real-Time Machine Learning-Based Driver Drowsiness Detection Using Visual Features*, J. Imaging
-
-## 5. 기술 스택
-
-| 구분 | 도구 |
-|---|---|
-| 언어 | Python 3.9+ |
-| 랜드마크 추출 | MediaPipe (Face Mesh) |
-| 영상 처리 / 기하 연산 | OpenCV (`cv2`, `solvePnP`) |
-| 수치 연산 | NumPy |
-| 개발 환경 | VS Code (로컬) |
-| 협업 | Git / GitHub |
-
-> 로컬 실행이 전제다. **웹캠 접근이 필요하므로 Google Colab은 사용하지 않는다.**
-> 의존성 버전이 확정되면 `requirements.txt`를 추가한다. (현재 미작성)
-
-## 6. 저장소 구조
-
-현재는 초기 세팅 상태로, 아래 3개 파일만 존재한다.
-
-```
-driver-drowsiness-detection/
-├── README.md      # 이 문서
-├── .gitignore     # 데이터·모델·개인 영상 제외 규칙
-└── config.py      # 공통 경로 정의 (팀원 PC 간 경로 통일)
+```text
+PERCLOS = 눈이 감긴 시간 / 얼굴이 검출된 시간
 ```
 
-**폴더 구조는 미리 만들지 않는다.** 코드가 실제로 필요로 하는 시점에 추가하고, 추가할 때 이 섹션을 갱신한다. 다음 두 폴더는 `config.py`가 실행 시 자동으로 생성하며 git 추적 대상이 아니다.
+기본 창은 60초, 경고 기준은 0.15입니다. 처음 10초 동안은 준비 구간이며, 얼굴 검출 비율이 30%보다 낮으면 결합 점수에서 제외합니다.
 
-| 폴더 | 용도 | git |
-|---|---|---|
-| `data/` | 데이터셋, 직접 촬영한 테스트 영상 | 제외 |
-| `outputs/` | 실행 결과, 로그, 캡처, 데모 영상 | 제외 |
-| `private/` | 회의록, 팀원 연락처·일정 등 비공개 자료 | 제외 |
+### 하품 감지
 
-> `outputs/`는 통째로 제외되므로 **발표 자료나 README에 넣을 스크린샷을 여기 두면 커밋되지 않는다.** 공유해야 하는 이미지는 `outputs/` 밖에 둔다.
-> `private/`는 아직 만들지 않았다. 필요해지면 만드는 즉시 `.gitignore` 규칙이 적용된다.
+하품은 한 프레임의 CNN 결과만으로 판정하지 않습니다.
 
-## 7. 실행 방법
+1. MediaPipe FaceLandmarker로 입 벌림 정도를 계산합니다.
+2. `open_ratio > 0.05`일 때만 Yawn CNN을 실행합니다.
+3. CNN의 `p(Yawn) >= 0.50`인 증거를 시간축으로 누적합니다.
+4. 누적값과 최근 3초의 최대 입 벌림 정도로 하나의 하품 이벤트를 판정합니다.
 
-**아직 실행 가능한 진입점 스크립트가 저장소에 커밋되어 있지 않다.** 현재 단계에서는 환경 준비까지만 가능하다.
+입 벌림 정도는 다음과 같이 계산합니다.
+
+```text
+open_ratio = 입술 안쪽 세로 거리(13, 14) / 양쪽 눈 바깥점 거리(33, 263)
+```
+
+시간 누적은 프레임 수가 아니라 실제 경과 시간을 사용합니다. 하품 상태가 `False`에서 `True`로 바뀌는 순간만 1회로 집계합니다.
+
+### 최종 졸음 점수
+
+눈의 EMA와 PERCLOS는 같은 눈 신호이므로 둘 중 큰 값을 사용합니다. 여기에 독립 신호인 하품 누적값을 결합합니다.
+
+```text
+eye_family = max(Eye EMA, normalized PERCLOS)
+drowsy = eye_family + (1 - eye_family) × 0.6 × Yawn
+```
+
+기본 졸음 판정 임계값은 `0.6`입니다.
+
+## 시스템 구조
+
+```text
+Webcam frame
+    ↓
+YuNet face detection
+    ├─ Eye crops → Eye CNN → Eye EMA ─┐
+    │                                ├─ Drowsiness score → NORMAL / DROWSY
+    │              PERCLOS ──────────┤
+    └─ Face crop                     │
+         ↓                           │
+       FaceLandmarker                │
+         ↓                           │
+       MouthGate → Yawn CNN → YawnAccumulator ─┘
+```
+
+실시간 실행을 종료하면 측정 시간, 의심 눈 감김 횟수, 최대 눈 감김 시간, 세션 PERCLOS, 하품 횟수, 졸음 경고 횟수를 `DRIVER MONITORING REPORT`로 출력합니다. 영상이나 얼굴 이미지는 저장하지 않습니다.
+
+## 프로젝트 구조
+
+```text
+Driver-Drowsiness-Detection/
+├── README.md
+├── config.py                         # 공통 경로 설정
+├── requirements.txt                 # 실행 패키지
+├── model/
+│   ├── 02_INFER_YuNet.ipynb          # 실시간 실행 진입점
+│   ├── detectors/
+│   │   └── face_detection_yunet_2023mar.onnx
+│   └── artifacts/
+│       ├── README.md                 # 가중치와 평가 결과 설명
+│       └── *_metrics.json            # 모델별 입력 규격과 평가 지표
+├── src/
+│   ├── eye_preprocess.py             # 눈·얼굴 crop 공통 전처리
+│   ├── mouth_gate.py                 # 입 벌림 측정과 게이트
+│   ├── yawn_accumulator.py            # 하품 시간 누적
+│   ├── yawn_dataset.py               # 하품 데이터 로딩과 추론 crop
+│   ├── train_eye.py                  # Eye CNN 학습·평가
+│   ├── train_yawn.py                 # 기본 Yawn CNN 학습·평가
+│   ├── train_yawn_zoo.py             # 하품 모델 비교 학습
+│   └── distill_yawn.py               # 지식 증류 실험
+├── scripts/                          # DMD·YawDD 하품 데이터 전처리
+├── outputs/eye_dataset/
+│   ├── eye_manifest.csv              # Eye CNN 통합 학습 manifest
+│   ├── class_balance.csv             # source·split별 클래스 분포
+│   ├── leakage_report.csv            # split 누수 점검 결과
+│   └── step12_comparison.csv          # Eye CNN 실험 비교 요약
+└── docs/yawn_model.md                # 하품 모델 실험 기록
+```
+
+`data/`와 대부분의 `outputs/`는 Git에서 제외됩니다. Eye CNN 재학습에 필요한 통합 manifest와 검증 요약만 `outputs/eye_dataset/`에 포함합니다. 원본 데이터셋, crop 이미지, 학습된 `.keras` 가중치는 저장소에 포함되지 않습니다.
+
+## 모델 및 데이터
+
+### 최종 추론 모델
+
+| 용도 | 파일 | 입력 | 출력 | 판정 기준 |
+|---|---|---|---|---|
+| 얼굴 검출 | `face_detection_yunet_2023mar.onnx` | BGR 프레임 | 얼굴 박스와 주요 좌표 | score 0.6 |
+| 눈 개폐 | `eye_mrl+dmd__eval-dmd__gray128.keras` | 128×128 gray | `Closed`, `Open` | `p(Closed) >= 0.93` |
+| 하품 | `yawn_yawn_mouthopen_v2__zoo-cnn_large__eval-face__gray128.keras` | 128×128 gray 얼굴 crop | `yawn`, `no_yawn` | 게이트 0.05, `p(Yawn) >= 0.50` |
+| 입 랜드마크 | `face_landmarker.task` | 얼굴 crop | 478개 얼굴 랜드마크 | `open_ratio > 0.05` |
+
+Eye CNN은 MRL Eye와 DMD를 합쳐 학습했습니다. Yawn CNN은 DMD와 YawDD에서 입이 열린 프레임을 구성해 학습한 `cnn_large` 모델입니다. 지식 증류와 다른 model-zoo 결과도 저장되어 있지만 최종 실시간 추론에는 사용하지 않습니다.
+
+### 저장된 평가 결과
+
+| 모델과 평가 조건 | Accuracy | Recall | Precision | F1 |
+|---|---:|---:|---:|---:|
+| Eye CNN, DMD hold-out 3,805프레임, 임계값 0.93 | 0.9624 | 0.9138 | 0.7871 | 0.8457 |
+| Yawn CNN, 입 벌림 게이트 통과 test 1,553장, 임계값 0.50 | 0.7521 | 0.6899 | 0.8118 | 0.7459 |
+| Yawn end-to-end, DMD test 1,131장, 게이트 포함 | 0.779 | 0.518 | 0.993 | - |
+
+평가 단위와 데이터 구성이 서로 다르므로 세 행을 직접 비교하면 안 됩니다. 하품 end-to-end 평가는 입을 다문 프레임과 손으로 입을 가린 하품까지 포함합니다.
+
+### 데이터와 재학습 범위
+
+원본 DMD, MRL Eye, YawDD 데이터는 라이선스와 용량 문제로 저장소에 포함하지 않습니다.
+
+코드에 남아 있는 흐름은 다음과 같습니다.
+
+```text
+DMD / MRL Eye / YawDD 원본
+    ↓
+전처리 및 subject 단위 split
+    ↓
+crop 이미지와 manifest 생성
+    ↓
+Eye CNN / Yawn CNN 학습과 평가
+    ↓
+.keras + _metrics.json 생성
+    ↓
+02_INFER_YuNet.ipynb에서 로드
+```
+
+하품 데이터는 `prepare_yawdd.py`, `build_yawdd_yawn_dataset.py`, `build_dmd_yawn_dataset.py`, `build_yawn_mouthopen_dataset.py` 순서의 전처리 도구가 남아 있습니다.
+
+눈 학습의 최종 스크립트인 `src/train_eye.py`는 저장소에 포함된 `outputs/eye_dataset/eye_manifest.csv`를 입력으로 사용합니다. manifest의 `path`는 저장소 루트 기준 상대경로이므로, DMD와 MRL Eye 원본 및 crop을 같은 경로에 준비해야 합니다. 통합 manifest를 새로 만드는 과거 노트북은 최종 저장소에 포함되어 있지 않으므로, manifest 생성부터 시작하는 전체 전처리 과정은 저장소만으로 재현할 수 없습니다. `src/train_eye_mrl.py`도 현재 없는 과거 manifest 경로를 참조하므로 최종 실행 경로가 아닙니다.
+
+## 설치 방법
+
+### 1. 저장소와 가상환경
 
 ```bash
-git clone <repo-url>
-cd driver-drowsiness-detection
-
+git clone --branch Drowsiness-Detection-260824 --single-branch https://github.com/lcsvvo/Driver-Drowsiness-Detection.git
+cd Driver-Drowsiness-Detection
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-
-pip install opencv-python mediapipe numpy
-
-python config.py               # 경로 설정 확인 및 data/, outputs/ 생성
 ```
 
-`python config.py`가 아래처럼 출력되면 경로가 정상이다. (개인 PC 절대경로는 출력하지 않는다.)
+가상환경을 활성화합니다.
 
+```bash
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+source .venv/bin/activate
 ```
-PROJECT_ROOT : driver-drowsiness-detection
-  [OK     ] DATA_DIR    : data
-  [OK     ] OUTPUTS_DIR : outputs
+
+### 2. 패키지 설치
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-`RuntimeWarning`이 뜨면 `config.py`가 저장소 최상단에 있는지 확인한다.
-코드 안에서는 `import config` 후 `config.describe()`로 같은 점검을 할 수 있다.
+`requirements.txt`에는 YuNet, CNN 추론, 노트북 실행, MediaPipe FaceLandmarker에 필요한 패키지가 포함되어 있습니다.
 
-## 8. 데이터 및 모델 관리 방식
+저장소에는 Python 3.11.7로 실행한 노트북 기록과 Python 3.12.4 개발 환경 기록이 함께 남아 있습니다. 정확한 patch 버전과 전체 패키지 버전을 고정한 lock file은 제공하지 않습니다.
 
-### 원칙
+### 3. CNN 가중치 다운로드
 
-**코드와 문서만 git으로 관리한다. 데이터·모델·영상은 저장소에 올리지 않는다.**
+[GitHub Release `weights-260823`](https://github.com/lcsvvo/Driver-Drowsiness-Detection/releases/tag/weights-260823)에서 다음 파일을 받아 `model/artifacts/`에 넣습니다.
 
-세 가지 이유가 겹친다.
+```text
+model/artifacts/eye_mrl+dmd__eval-dmd__gray128.keras
+model/artifacts/yawn_yawn_mouthopen_v2__zoo-cnn_large__eval-face__gray128.keras
+```
 
-1. **용량** — 영상 데이터셋은 GB 단위다. GitHub는 파일당 100MB 제한이 있고, 한 번 커밋되면 히스토리에 남아 제거가 번거롭다.
-2. **라이선스** — 공개 데이터셋 중 재배포가 제한되는 것이 있다. 저장소가 Public일 경우 재배포에 해당할 수 있다.
-3. **초상권·개인정보** — 팀원이 직접 촬영한 얼굴 영상이 포함된다. 실수로 커밋하면 되돌리기 어렵다. `.gitignore`에서 폴더 단위와 확장자 단위로 이중 차단했다.
+GitHub CLI를 사용하는 경우 저장소 루트에서 실행합니다.
 
-### 공유 방법
+```bash
+gh release download weights-260823 -R lcsvvo/Driver-Drowsiness-Detection -D model/artifacts
+```
 
-데이터는 별도 채널(팀 공용 드라이브 등)로 공유하고, 각자 로컬 `data/` 아래에 동일한 이름으로 배치한다. 폴더명이 다르면 코드가 깨지므로 **경로는 반드시 `config.py`를 통해 참조한다.**
+### 4. FaceLandmarker 다운로드
 
-### 데이터셋 검토 현황
+`face_landmarker.task`를 `model/detectors/`에 저장합니다.
 
-| 데이터셋 | 용도 | 상태 |
-|---|---|---|
-| YawDD | 하품 감지 (대화·노래 상황 구분 가능) | 검토 완료, 사용 후보 |
-| UTA-RLDD | 실제 졸음 상황 | 검토 완료, 사용 후보 |
-| State Farm Distracted Driver | 주의 산만 | 스트레치 목표 전용, 재배포 제한 있음 |
-| AI-Hub 운전자 상태 영상 | 종합 | **접근 승인·라벨 단위 미확인** |
+```bash
+curl -L -o model/detectors/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+```
 
-> **최종 사용 데이터셋은 확정되지 않았다.** 위 표는 검토 결과이며, 확정 시 갱신한다.
+Windows PowerShell에서 `curl` 명령이 동작하지 않으면 다음을 사용합니다.
 
-### 모델 가중치
+```powershell
+Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" -OutFile "model/detectors/face_landmarker.task"
+```
 
-MediaPipe Face Mesh는 패키지에 포함된 모델을 사용하므로 현재 별도 가중치 파일 관리가 필요하지 않다. 향후 별도 모델 파일이 필요해지면 `.gitignore`에 이미 규칙이 있으므로 그대로 제외된다.
+이 파일이 없으면 노트북은 중단되지 않지만 입 벌림 게이트가 비활성화됩니다. 최종 하품 판정 구조를 재현하려면 반드시 필요합니다.
 
-## 9. 현재 진행 상황
+## 실행 방법
 
-| 항목 | 상태 |
-|---|---|
-| 저장소 초기 세팅 (README / .gitignore / config.py) | 완료 |
-| EAR 기반 졸음 감지 baseline 로컬 확보 | 완료 (**아직 미커밋**) |
-| MAR 하품 감지 | 미착수 |
-| head pose 주의 산만 감지 | 미착수 |
-| PERCLOS | 미착수 |
-| 3-state 판정 로직 | 미설계 |
-| 임계값 결정 | 미착수 |
-| 평가 방법 | **미정** |
-| 데이터셋 최종 확정 | **미정** |
-| 팀원 역할 분담 | **미정** |
-| `requirements.txt` | 미작성 |
+1. VS Code 또는 Jupyter를 지원하는 편집기에서 `model/02_INFER_YuNet.ipynb`를 엽니다.
+2. 위에서 만든 가상환경을 노트북 커널로 선택합니다.
+3. 셀을 위에서 아래로 순서대로 실행합니다.
+4. `경로 · 가중치 · 게이트` 셀에서 Eye CNN, Yawn CNN, YuNet이 모두 `[o]`이고 입 벌림 게이트가 활성화되었는지 확인합니다.
+5. 카메라 점검 셀에서 사용할 카메라와 OpenCV 백엔드를 확인합니다.
+6. 마지막 셀을 실행해 실시간 모니터를 시작합니다.
+7. 기본 실행은 180초 후 종료됩니다. 그 전에 멈추려면 노트북의 interrupt 버튼을 누릅니다.
 
-## 10. 협업 방식
+마지막 셀의 기본 호출은 다음과 같습니다.
 
-4인이 각자 다른 PC에서 작업하므로 아래를 지킨다.
+```python
+summary = run_realtime_scores(
+    max_seconds=180,
+    threshold=0.6,
+    perclos_window=60.0,
+    perclos_threshold=0.15,
+)
+```
 
-1. 작업 시작 전 반드시 로컬 `main`에 `git pull`
-2. 작업 단위로 브랜치 생성 — `<type>/<짧은-설명>` 형식
-   - 예: `feature/mar-yawn-detection`, `fix/landmark-index`, `docs/readme-update`
-   - `claude/~`, `codex/~` 등 에이전트 자동 브랜치명은 사용하지 않는다
-3. 작업 후 `commit` → `push`
-4. PR 생성 — 무엇을 / 왜 / 팀원이 확인할 점만 간단히
-5. **셀프 머지 금지.** 최소 1명 리뷰 후 머지
-6. 다른 작업이 먼저 반영됐을 수 있으므로 새 작업 전 항상 `pull`
+경로 설정만 확인하려면 저장소 루트에서 다음을 실행할 수 있습니다.
 
-### 코드 작성 시 지킬 것
+```bash
+python config.py
+```
 
-- **개인 PC 절대경로를 코드에 직접 쓰지 않는다.** 경로는 `config.py`에서 import한다.
-- 데이터 파일·영상·모델 파일을 커밋하지 않는다. `git status`로 확인 후 커밋한다.
-- 노트북을 커밋할 경우 출력(output)을 지우고 커밋한다. 이미지 출력이 그대로 들어가면 diff를 읽을 수 없고 용량이 커진다.
+## 결과 / Demo
+
+실시간 화면에는 얼굴·눈·하품 crop 박스와 다음 값이 표시됩니다.
+
+- `EYE CLOSED`: 현재 눈 감김 점수
+- `MOUTH OPEN`: 현재 프레임의 하품 CNN 점수
+- `YAWN ACC`: 시간 누적 하품 점수
+- `DROWSY`: 최종 졸음 점수
+- `PERCLOS`: 최근 구간의 눈 감김 비율
+- 눈 감김, 하품, 졸음 경고 누적 횟수
+
+실행 종료 후에는 `DRIVER MONITORING REPORT`와 같은 세션 요약이 출력됩니다. 저장소에는 별도의 데모 영상이나 결과 이미지가 포함되어 있지 않습니다.
+
+## 한계 및 향후 개선
+
+- 손으로 입을 가린 하품의 DMD Recall은 0.162입니다. 랜드마커가 가려진 입을 닫힌 상태로 판단해 게이트에서 차단하는 것이 주된 원인입니다.
+- Yawn CNN의 피험자별 성능 차이가 큽니다. 저장된 test의 피험자별 정확도 범위는 0.4404~0.9661입니다.
+- PERCLOS는 기본 60초 창을 사용하므로 실행 초반에는 충분한 누적 시간이 필요합니다.
+- 조명, 안경, 얼굴 각도, 카메라 위치가 얼굴·눈 검출 결과에 영향을 줄 수 있습니다.
+- 현재 평가는 제한된 공개 데이터셋의 hold-out 결과이며 실제 도로 환경의 안전성을 보장하지 않습니다.
+- 주의 산만, 머리 방향, 휴대전화 사용, 안전벨트 감지는 구현되어 있지 않습니다.
+- 재학습을 완전히 재현하려면 원본 데이터와 눈 데이터 통합 manifest 생성 절차를 별도로 정리해야 합니다.
