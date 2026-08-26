@@ -38,8 +38,17 @@ desktop.ini
 #  - 초상권: 직접 촬영한 얼굴 영상이 포함된다
 # =============================================================
 data/
-outputs/
 private/
+
+# outputs는 기본적으로 제외하되, Eye CNN 재학습에 필요한 통합 manifest와
+# 검증 요약만 공개한다. crop 이미지와 프레임별 평가 결과는 계속 제외한다.
+outputs/*
+!outputs/eye_dataset/
+outputs/eye_dataset/*
+!outputs/eye_dataset/eye_manifest.csv
+!outputs/eye_dataset/class_balance.csv
+!outputs/eye_dataset/leakage_report.csv
+!outputs/eye_dataset/step12_comparison.csv
 
 # 영상 파일 (경로 무관 전면 차단)
 *.mp4

@@ -1,0 +1,7 @@
+split,source,n,closed,subjects,closed_pct
+test,dmd,7610,858,4,11.3
+test,mrl,12155,6149,9,50.6
+train,dmd,10956,5632,7,51.4
+train,mrl,60264,29668,22,49.2
+val,dmd,3338,1490,2,44.6
+val,mrl,12479,6129,6,49.1

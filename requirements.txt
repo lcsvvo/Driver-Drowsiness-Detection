@@ -19,6 +19,10 @@ numpy>=1.24
 pandas>=2.0
 matplotlib>=3.7
 
+# 입 벌림 게이트에서 FaceLandmarker Tasks API를 사용한다.
+# model/detectors/face_landmarker.task 파일은 별도로 받아야 한다.
+mediapipe
+
 # 노트북 실행용. VS Code 에서 커널을 잡으려면 ipykernel 이 필요하다.
 ipykernel>=6.25
 ipython>=8.12
