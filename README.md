@@ -6,7 +6,7 @@
 
 이 README와 `main` 브랜치는 최종 구현을 기준으로 합니다. 원본 개발 브랜치는 [`Drowsiness-Detection-260824`](https://github.com/lcsvvo/Driver-Drowsiness-Detection/tree/Drowsiness-Detection-260824), 보존용 복사본은 [`backup/Drowsiness-Detection-260824`](https://github.com/lcsvvo/Driver-Drowsiness-Detection/tree/backup/Drowsiness-Detection-260824)입니다.
 
-> 이 프로젝트는 실험용 프로토타입입니다. 실제 차량의 안전 장치나 의료 진단 도구로 사용할 수 없습니다.
+> 이 프로젝트는 실험용 프로토타입입니다. 실제 차량의 안전 장치로 사용할 수 없습니다.
 
 ## 프로젝트 소개
 
