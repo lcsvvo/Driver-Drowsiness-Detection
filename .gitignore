@@ -37,7 +37,8 @@ desktop.ini
 #  - 라이선스: DMD 등 일부 데이터셋은 재배포 제한이 있다
 #  - 초상권: 직접 촬영한 얼굴 영상이 포함된다
 # =============================================================
-data/
+/data/*
+!/data/README.md
 private/
 
 # outputs는 기본적으로 제외하되, Eye CNN 재학습에 필요한 통합 manifest와
@@ -91,3 +92,11 @@ outputs/eye_dataset/*
 # 이게 없으면 02_INFER_YuNet.ipynb 이 아예 돌지 않는다.
 *.onnx
 !model/detectors/face_detection_yunet_2023mar.onnx
+
+# Public folder guides
+!outputs/README.md
+!outputs/eye_dataset/README.md
+
+# Local dated development notes
+/README_*.md
+
